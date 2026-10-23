@@ -1,4 +1,5 @@
 """Execute the real ARM upload receiver through its reply boundary offline."""
+import os
 import pathlib
 import platform
 import struct
@@ -25,7 +26,8 @@ UNCACHED = POOL + 0x40000000
 STATE = 0xC072F000
 STACK = 0x70000000
 DEST = POOL + 0x10000
-IMAGE = HERE.parents[1] / 'out' / 'MAIN_c0000000.bin'
+IMAGE = pathlib.Path(os.environ.get('FPSUP_FP_MAIN',
+                                   HERE.parents[1] / 'out' / 'MAIN_c0000000.bin'))
 # crc_block calls the firmware's own crc32 (worker.S FW_CRC32): a leaf in the
 # image and its table.  The real bytes are mapped, and execution may enter
 # that routine and nothing else outside the worker.

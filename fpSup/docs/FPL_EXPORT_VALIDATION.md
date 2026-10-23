@@ -13,6 +13,7 @@ by `FPL_MAIN`, `FPSUP_FPL_MAIN` and `FPSUP_FP_MAIN`:
 |---|---|
 | All `test_fpl_*.py`, packaging, firmware profiles, heap probes, v3 shell profile, boot-chain/loader-hook/splash | 413 run: **410 passed, 3 expected failures**, no skips |
 | Host EP83, MEM1 and upload harnesses | **13 passed** |
+| Default fp worker MEM1/upload ARM harnesses | **24 passed**, external fp image supplied |
 | MOV epoch classification including actual-firmware bounded replay | **10 passed** |
 | Legacy catalogue reference helpers | **11 passed** |
 | Shared gyro direct-GCSV/format/stream/lifecycle/release/safety | 130 run: **126 passed, 3 failures, 1 skip** |
@@ -40,6 +41,11 @@ Public native tests retain exact image checks. Missing required native input was
 also checked to fail explicitly with instructions to set `FPL_MAIN`, not pass or
 skip. Optional image-dependent tests retain explicit skip messages. Firmware,
 DATA/container inputs and raw observations are never part of this patch.
+
+The default fp worker harness initially skipped all 24 tests because its image
+path was fixed. It now accepts `FPSUP_FP_MAIN`, preserving the legacy default and
+all assertions. With the explicit external official image, all 24 executed and
+passed; no firmware copy or skip override was used.
 
 ## Default fp artifact comparison
 
@@ -87,6 +93,8 @@ Other commands, from their respective directories:
 ```sh
 # fpSup/fp_usb_shell/host/tests
 python3 -B -m unittest test_ep83_host test_mem_host test_upload_host
+# fpSup/fp_usb_shell (FPSUP_FP_MAIN set)
+python3 -B -m unittest test_worker_mem test_worker_upload
 # fpSup/tools
 python3 -B -m unittest test_fpl_mov_epoch
 # fpSup/tools/card-composer
