@@ -19,7 +19,7 @@ class EP83HostTests(unittest.TestCase):
         cls.addClassCleanup(cls.tmp.cleanup)
         cls.binary = pathlib.Path(cls.tmp.name) / "ep83-harness"
         subprocess.run([
-            "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+            "cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-D_DEFAULT_SOURCE",
             "-I", str(HERE / "ep83_fake_libusb"),
             str(HERE / "ep83_harness.c"), "-lz", "-o", str(cls.binary),
         ], check=True, capture_output=True, text=True)

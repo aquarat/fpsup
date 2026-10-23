@@ -2,6 +2,13 @@
 .arm
 .text
 .global stage2
+#include "../firmware/loader.h"
+
+/* Firmware addresses come from the firmware profile headers, exactly like
+ * loader.S: one implementation, per-version constants.  fp keeps its
+ * established values (the header reproduces them byte-for-byte); fp L has
+ * no cave, so its exclusion is empty and its resident code lives in memory
+ * the payload allocates. */
 
 /* Not "the pool" any more -- there is no such thing.  This word holds whatever
  * the file's own entry published into it, which is how a section can name an
@@ -10,10 +17,10 @@
  * leaves it zero, and the placement below is skipped rather than writing to a
  * low address.  The loader does NOT publish it: its staging buffer is handed
  * back, and pointing anything at a freed block is worse than pointing at zero. */
-.equ FRAMEBUF, 0xC3757A7C
-.equ F_DCACHE,  0xC000E91C           /* D-cache clean/invalidate + barriers */
-.equ F_ICACHE,  0xC000EABC           /* whole I-cache invalidate + barriers */
-.equ F_TICK_US, 0xC002B6E0           /* () -> microseconds since power-on   */
+.equ FRAMEBUF,  FW_FRAMEBUF
+.equ F_DCACHE,  FW_DCACHE         /* D-cache clean/invalidate + barriers */
+.equ F_ICACHE,  FW_ICACHE         /* whole I-cache invalidate + barriers */
+.equ F_TICK_US, FW_TICK_US        /* () -> microseconds since power-on   */
 
 #ifdef LH_RESTORE
 /* The power-off restore (LH_RESTORE, every --loader card) and the loader hook
@@ -32,13 +39,13 @@
  *
  * Non-cache routines are called through r3/r7, not ip: verify_stage2_cache_
  * publish reads every movw/movt/blx ip as a cache call. */
-.equ LH_SITE,   0xC03DA420           /* bl 0xC03DA758: starts the AutoRun   */
-.equ MEM_HEAP,  0xC001CF78           /* (class) -> channel                  */
-.equ MEM_GET,   0xC001D038           /* (channel, size, 0, 0, [sp] 0)       */
-.equ POFF_MGR,  0xC0023A98           /* () -> XC_PowerOffMgr                */
-.equ POFF_ADD,  0xC0024118           /* (mgr, obj, forced) -> 1 registered  */
-.equ CAVE_LO,   0xC072D000
-.equ CAVE_HI,   0xC0735000
+.equ LH_SITE,   FW_LH_SITE            /* bl FW_AR_START: starts the AutoRun */
+.equ MEM_HEAP,  FW_MEM_HEAP           /* (class) -> channel                  */
+.equ MEM_GET,   FW_MEM_GET            /* (channel, size, 0, 0, [sp] 0)       */
+.equ POFF_MGR,  FW_POFF_MGR           /* () -> XC_PowerOffMgr                */
+.equ POFF_ADD,  FW_POFF_ADD           /* (mgr, obj, forced) -> 1 registered  */
+.equ CAVE_LO,   FW_CAVE_LO
+.equ CAVE_HI,   FW_CAVE_HI
 /* LH_ENTRY_AT / LH_ENTRY_WORD: the loader's +4 and the `b lhook` it must hold.
  * LH_BL: `bl LH_ENTRY_AT` encoded at LH_SITE.  Passed in by build_autorun. */
 #endif
@@ -98,12 +105,18 @@ stage2:
      * little further each time until it walked off the end -- the same shape as
      * the stale B_PTR that had the logger writing into buffers the recorder had
      * been given.  Here is the only honest moment: after the file is in memory
-     * and before any entry has run. */
+     * and before any entry has run.
+     *
+     * CAVE_ARENA is a build-time value a cave build always passes (fp) and a
+     * no-cave build does not (fp L): with no cave there is no arena to reset,
+     * and the payload's resident memory comes from the allocator instead. */
+#ifdef CAVE_ARENA
     movw    r0, #:lower16:CAVE_ARENA
     movt    r0, #:upper16:CAVE_ARENA
     movw    r1, #:lower16:CAVE_BUMP
     movt    r1, #:upper16:CAVE_BUMP
     str     r0, [r1]
+#endif
 #ifdef LH_RESTORE
     /* The journal and the power-off callback, BEFORE anything is placed: a
      * patch must never exist without its way back.  r9 = the block (0: none,
@@ -282,7 +295,13 @@ stage2:
      * and requires the list to be exactly the two cache routines.  That check
      * is the reason a renamed constant cannot make a build look safe, so this
      * routine stays out of its way instead of being accommodated by it.  r4 and
-     * r5 are ours -- both are in the push above and about to be popped. */
+     * r5 are ours -- both are in the push above and about to be popped.
+     *
+     * LOAD_DONE_US is a build-time define: fp's cave build always names the
+     * word, and a no-cave build (fp L) has no cave word to write -- profiling
+     * on fp L waits for a placement decision, so the whole block is compiled
+     * out rather than pointed somewhere arbitrary. */
+#ifdef LOAD_DONE_US
     mov     r5, sp
     bic     sp, sp, #7
     movw    r4, #:lower16:F_TICK_US
@@ -292,6 +311,7 @@ stage2:
     movw    r1, #:lower16:LOAD_DONE_US
     movt    r1, #:upper16:LOAD_DONE_US
     str     r0, [r1]
+#endif
 
 #ifdef LH_BANNER
     /* On a warm boot the AutoRun never runs, so nothing else tells the user

@@ -138,7 +138,9 @@
  * of them loads the base once and indexes.  The .if guards below are the whole
  * point of writing it twice: an offset that drifts from its address would be a
  * hook quietly reading someone else's counter. */
+#ifndef GYRO_DESC_PTR
 .equ GYRO_DESC_PTR,  0xC31E3FCC     /* -> P; P+0x60 -> the firmware's ring    */
+#endif                            /* explicit diagnostic/profile override */
 .equ GYRO_RING_SPAN, 0x12C0         /* 600 records of eight bytes             */
 
 /* The ring's head, as a byte offset into it.

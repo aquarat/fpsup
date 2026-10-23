@@ -9,6 +9,9 @@ with the firmware routines they call (file API, allocator, power-off manager,
 cache) replaced by Python.  The payload's own entry is stubbed: this is about
 what the loader and stage2 do, not the worker.
 
+FPSUP_FP_MAIN may name the separately downloaded/extracted fp 5.02 MAIN image
+when the full research tree is absent. The explicit override is fingerprinted.
+
 What it proves, per LOADER_V2.md:
   - entered through the hook (+4), a good file loads and the AutoRun is NOT
     started; a missing file starts it with the firmware's own r0/r1/lr
@@ -18,6 +21,7 @@ What it proves, per LOADER_V2.md:
     pointing at the loader
   - a loader whose +4 is not this build's hook entry is never armed
 """
+import os
 import pathlib
 import re
 import struct
@@ -27,7 +31,11 @@ import tempfile
 import unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
-IMAGE = HERE.parents[1] / 'out' / 'MAIN_c0000000.bin'
+IMAGE = pathlib.Path(os.environ.get('FPSUP_FP_MAIN',
+                                   HERE.parents[1] / 'out' / 'MAIN_c0000000.bin'))
+if os.environ.get('FPSUP_FP_MAIN'):
+    from firmware import get_camera
+    get_camera().verify_main(IMAGE)
 
 try:
     from unicorn import Uc, UC_ARCH_ARM, UC_MODE_ARM, UC_HOOK_CODE

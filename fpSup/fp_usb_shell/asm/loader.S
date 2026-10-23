@@ -1,6 +1,7 @@
 .syntax unified
 .arm
 .text
+#include "../firmware/loader.h"
 /* ============================================================================
  * loader — read the code off the card instead of spelling it out.
  * ============================================================================
@@ -42,9 +43,9 @@
  * USER, which is where `memmgr bufmem get` was taking this same megabyte from;
  * NOT class 10, which is RAW, the CinemaDNG frame buffer, and the allocation
  * whose failure is what froze movRec for a week. */
-.equ H_GET,       0xC001D740    /* (desc, class, size, 0)                   */
-.equ H_ADDR,      0xC001D7F0    /* (desc) -> address                        */
-.equ H_FREE,      0xC001D7A0    /* (desc, 2)                                */
+.equ H_GET,       FW_H_GET     /* (desc, class, size, 0)                   */
+.equ H_ADDR,      FW_H_ADDR    /* (desc) -> address                        */
+.equ H_FREE,      FW_H_FREE    /* (desc, 2)                                */
 .equ POOL_CLASS,  0            /* USER                                      */
 /* 64 KiB, and it is STAGING, not a pool.
  *
@@ -71,16 +72,16 @@
                                  * never for more than there is room for   */
 #endif
 
-.equ F_MGR,       0xC0444658
-.equ F_VOL,       0xC0444698
-.equ F_CTOR,      0xC0365E90
-.equ F_OPEN,      0xC0365FB0
-.equ F_READ,      0xC0366060
-.equ F_CLOSE,     0xC0366020
-.equ F_DTOR,      0xC0365ED0
-.equ F_CACHE,     0xC000E91C
-.equ F_ICACHE,    0xC000EABC
-.equ F_TICK_US,   0xC002B6E0    /* () -> microseconds since power-on      */
+.equ F_MGR,       FW_F_MGR
+.equ F_VOL,       FW_F_VOL
+.equ F_CTOR,      FW_F_CTOR
+.equ F_OPEN,      FW_F_OPEN
+.equ F_READ,      FW_F_READ
+.equ F_CLOSE,     FW_F_CLOSE
+.equ F_DTOR,      FW_F_DTOR
+.equ F_CACHE,     FW_DCACHE
+.equ F_ICACHE,    FW_ICACHE
+.equ F_TICK_US,   FW_TICK_US    /* () -> microseconds since power-on      */
 
 .equ VOL_SD,      1             /* FUN_c0444698: 1 = the card, 5 = an SSD */
 
@@ -121,7 +122,7 @@
 9:  .word 0xEA000000 + ((((\target) - (LOADER_BASE + (9b - _lstart)) - 8) >> 2) & 0xFFFFFF)
 .endm
 
-.equ AR_START,    0xC03DA758    /* ("\AutoRun.txt", 1): starts the script     */
+.equ AR_START,    FW_AR_START  /* ("\AutoRun.txt", 1): starts the script     */
 
 /* --- the borrowed echo handler: called once, by the AutoRun ----------------
  *

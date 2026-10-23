@@ -189,8 +189,9 @@ def boot_options(shared):
     default = variants['i1f0']['files']
     ui = embedded({rel: shared[rel] for rel in SHARED[2:]})
     sources = [FPSUP / 'fp_usb_shell' / p for p in
-               ['build_autorun.py', 'asm/loader.S', 'asm/stage2.S', 'asm/store_boot.S',
-                'asm/abort.S', 'asm/splash_finish.S', 'v3/build_v3.py', 'v3/sloader_entry.S', 'v3/sloader.c', 'v3/allsups.c']]
+               ['build_autorun.py', 'firmware.py', 'asm/loader.S', 'asm/stage2.S', 'asm/store_boot.S',
+                 'asm/abort.S', 'asm/splash_finish.S', 'v3/build_v3.py', 'v3/sloader_entry.S', 'v3/sloader.c', 'v3/allsups.c']]
+    sources += sorted((FPSUP / 'fp_usb_shell/firmware').glob('*.h'))
     sources += list((FPSUP / 'uishare/tab').glob('*.py'))
     sources += list((FPSUP / 'uishare').glob('*.c')) + list((FPSUP / 'uishare').glob('*.h'))
     return default + ui, dict(default=dict(instant=True, fast=False, manager=False), variants=variants,

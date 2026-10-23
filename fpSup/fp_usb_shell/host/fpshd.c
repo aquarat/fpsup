@@ -754,7 +754,8 @@ enum { CMD_MEMW = 6, CMD_MEMR = 7, CMD_WIN = 8, CMD_MEMCAPS = 9 };
 #define MEM_XFER_MAX 0xFFFC00u
 #define MEM_OPT_CRC  2u
 
-static int mem_send(uint8_t command, const uint32_t *words, int n, uint32_t *seq)
+static int mem_send(uint8_t command, const uint32_t *words, int n, uint32_t *seq,
+                    fpsh_frame *sent)
 {
     /* 68 bytes, so the frame ends on a short packet at any speed. */
     unsigned char txbuf[FRAME_SIZE + 4] = {0};
@@ -766,6 +767,7 @@ static int mem_send(uint8_t command, const uint32_t *words, int n, uint32_t *seq
     tx->payload_length = (uint16_t)(4 * n);
     memcpy(tx->payload, words, 4 * (size_t)n);
     tx->checksum = crc32(txbuf, FRAME_SIZE);
+    if (sent) memcpy(sent, tx, sizeof *sent);
     int moved = 0;
     int rc = libusb_bulk_transfer(g_cam, EP_OUT, txbuf, sizeof txbuf, &moved, 1000);
     if (rc != 0 || moved != (int)sizeof txbuf) {
@@ -797,6 +799,13 @@ static int mem_frame_ok(const unsigned char *b, int moved, uint8_t command,
         rx.sequence != seq || crc32((const uint8_t *)&rx, FRAME_SIZE) != want) {
         snprintf(g_why, sizeof g_why, "cmd%u reply not ours (seq %u want %u)",
                  command, rx.sequence, seq);
+        return -1;
+    }
+    /* WIN uses one ordinary, terminal four-byte result, not a MEMW
+     * READY/DONE frame. In particular, a slot-0 request echo is not success. */
+    if (command == CMD_WIN &&
+        (rx.flags != 0 || rx.status != 0 || rx.payload_length != 4)) {
+        snprintf(g_why, sizeof g_why, "window reply shape");
         return -1;
     }
     if (rx.payload_length < 4 * nwords && rx.status == 0) {
@@ -832,7 +841,7 @@ static int mem_win(uint32_t slot, uint32_t base, uint32_t len, uint32_t perm)
     g_why[0] = 0;
     if (transport_quarantined() || cam_open() != 0) return -1;
     uint32_t w[4] = {slot, base, len, perm}, seq, r[1];
-    if (mem_send(CMD_WIN, w, 4, &seq)) return -1;
+    if (mem_send(CMD_WIN, w, 4, &seq, NULL)) return -1;
     /* The ordinary reply path answers: status 0 in the header, code in word 0. */
     int st = mem_recv(CMD_WIN, seq, 1000, r, 1);
     if (st != 0) return -1;
@@ -866,7 +875,8 @@ static double now_ms(void)
 static int mem_read_one(uint32_t addr, unsigned char *dst, uint32_t len, uint32_t opts)
 {
     uint32_t w[3] = {addr, len, opts}, seq;
-    if (mem_send(CMD_MEMR, w, 3, &seq)) return -1;
+    fpsh_frame sent;
+    if (mem_send(CMD_MEMR, w, 3, &seq, &sent)) return -1;
     /* Ask for at least a frame, so a refusal (64 bytes) never overflows a
      * short read; a granted read of fewer bytes ends on its short packet. */
     static unsigned char small[FRAME_SIZE];
@@ -880,6 +890,13 @@ static int mem_read_one(uint32_t addr, unsigned char *dst, uint32_t len, uint32_
                  libusb_error_name(rc), moved, len);
         if (rc == LIBUSB_ERROR_NO_DEVICE) cam_close();
         else { if (rc == LIBUSB_ERROR_PIPE) libusb_clear_halt(g_cam, EP_IN); drain_in(); }
+        return -1;
+    }
+    /* Raw reads have no response header. Reject only this exact request
+     * echo, not arbitrary data starting with FPSH. A real memory image equal
+     * to the current request is indistinguishable and must fail closed too. */
+    if (moved == FRAME_SIZE && !memcmp(buf, &sent, FRAME_SIZE)) {
+        snprintf(g_why, sizeof g_why, "read reply echoed current request");
         return -1;
     }
     if ((uint32_t)moved == len) {
@@ -911,7 +928,7 @@ static int mem_write_one(uint32_t addr, const unsigned char *src, uint32_t len,
                          uint32_t opts)
 {
     uint32_t w[3] = {addr, len, opts}, seq, r[3];
-    if (mem_send(CMD_MEMW, w, 3, &seq)) return mem_write_settle(-1, len);
+    if (mem_send(CMD_MEMW, w, 3, &seq, NULL)) return mem_write_settle(-1, len);
     int st = mem_recv(CMD_MEMW, seq, 1000, r, 3);              /* READY */
     if (st > 0) return -2;               /* refused: nothing was armed */
     if (st != 0) return mem_write_settle(-1, len);
@@ -1191,9 +1208,14 @@ int main(int argc, char **argv)
             mem_request(c, line); close(c); continue;
         }
         if (!strcmp(line, "PING")) {
+            /* Legacy worker's empty PING reply is byte-identical to its
+             * request: success cannot prove execution rather than loopback.
+             * A reviewed worker can return literal PONG instead. Report which
+             * form arrived; legacy success still does not prove execution. */
             int r = exchange(CMD_PING, NULL, reply, sizeof reply, 0);
             if (r < 0) write_line(c, "ERR ping\n");
-            else { char s[64]; snprintf(s, sizeof s, "OK pong seq=%u\n", g_seq); write_line(c, s); }
+            else { char s[96]; snprintf(s, sizeof s, "OK pong seq=%u proof=%s\n", g_seq,
+                       r == 4 && !memcmp(reply, "PONG", 4) ? "PONG" : "legacy-ambiguous"); write_line(c, s); }
             close(c); continue;
         }
         /* TMO <ms> <line>: this one command answers fast, so do not spend a

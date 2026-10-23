@@ -28,6 +28,10 @@
 > or go straight to **[fpSup-Merge](https://ijigen.github.io/fpSup/tools/card-composer/)**, pick your tools and download a whole card.
 > Questions, bug reports, or just to chat → **[Discord](https://discord.gg/XeFK5zNZpT)**
 
+**fp L port in development:** [shared-code approach and status](fpSup/docs/FPL_PORT.md).
+Development shell, RAM transfers and card transfers are verified on fp L 3.02;
+the downloadable product cards still target fp 5.02. See [development tools](fpSup/docs/FPL_TOOLS.md).
+
 ---
 
 ## 🛠️ How this repo helps you build

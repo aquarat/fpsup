@@ -16,11 +16,20 @@ takes are also the seconds that restore needs.
 import argparse, hashlib, pathlib, sys
 
 from armasm import assemble, symbols, words as to_words
+from firmware import CAMERAS, DEFAULT_CAMERA, get_camera
+from card_build import build_vbin
 
 HERE = pathlib.Path(__file__).resolve().parent
 DEST_DEFAULT = HERE / 'autorun' / 'AutoRun.txt'
 
 ap = argparse.ArgumentParser()
+ap.add_argument('--camera', choices=CAMERAS, default=DEFAULT_CAMERA,
+                help='exact camera firmware (fp L requires --fpl-shell)')
+ap.add_argument('--fpl-shell', action='store_true',
+                help='restricted fp L ordinary headless shell; requires --loader, '
+                     '--no-four-box-bar, --no-fast-echo, --no-ep-patches and --main')
+ap.add_argument('--main', type=pathlib.Path,
+                help='verified fp L 3.02 declared-length MAIN image for dir restoration')
 ap.add_argument('--payload', help='source to load into the cave and arm')
 ap.add_argument('--entry', help='symbol in the payload the callback should reach')
 ap.add_argument('--payload-addr', type=lambda s: int(s, 0), default=0xC072DE64)
@@ -158,6 +167,39 @@ ap.add_argument('--loader-hook-banner-at', type=int, default=3_000_000,
                      'many microseconds after power-on (default 3 s; drawn at '
                      '1.35 s it is wiped by the UI coming up)')
 args = ap.parse_args()
+camera = get_camera(args.camera)
+if args.fpl_shell:
+    # Explicit allowlist: future fp product switches must not silently become
+    # supported here, even if they happen to have a harmless default today.
+    allowed = {'--camera', '--fpl-shell', '--main', '--out', '--loader',
+               '--no-four-box-bar', '--no-fast-echo', '--no-ep-patches'}
+    switches = {arg.split('=', 1)[0] for arg in sys.argv[1:] if arg.startswith('--')}
+    required = {'--loader', '--no-four-box-bar', '--no-fast-echo', '--no-ep-patches'}
+    if (camera.name != 'fp-l-3.02' or switches - allowed
+            or not required <= switches or not args.main or not args.out):
+        ap.error('--fpl-shell supports only --camera fp-l-3.02 --loader '
+                 '--no-four-box-bar --no-fast-echo --no-ep-patches '
+                 '--main MAIN.bin --out NEW/AutoRun.txt')
+    from card_build import ordinary_card
+    try:
+        text, art = ordinary_card(args.main)
+        if args.out.exists() or (args.out.parent / 'fpSup.BIN').exists():
+            raise ValueError('fp L output must be fresh (AutoRun and BIN must not exist)')
+        if args.out.name == 'fpSup.BIN':
+            raise ValueError('--out must name the AutoRun script, not fpSup.BIN')
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(text)
+        (args.out.parent / 'fpSup.BIN').write_bytes(art['binfile'])
+    except (OSError, ValueError) as error:
+        ap.error(str(error))
+    print(f'fp L ordinary headless shell: {args.out}; entry 0x{art["entry"]:08X}')
+    sys.exit(0)
+if args.main:
+    ap.error('--main is only supported with --fpl-shell')
+try:
+    camera.require_card_support()
+except ValueError as error:
+    ap.error(str(error))
 if args.four_box_bar is None:
     args.four_box_bar = bool(args.loader and not args.boot_call)
 if args.loader_hook and not args.loader:
@@ -279,8 +321,8 @@ HOOK   = 0xC00D0794   # gyro callback, borrowed once to create the task
 if args.read_cap is not None and (args.read_cap & 0xFFF or
                                   not 0xF000 <= args.read_cap <= 0x1F000):
     ap.error('--read-cap is whole 4 KiB pages, 0xF000..0x1F000')
-LOADER_DEFINES = [f'LOADER_BASE={CAVE_LOW}', f'POOL_DESC=0x{POOL_DESC:08X}',
-                  BIN_PATH_DEF] + (
+LOADER_DEFINES = camera.loader_defines() + [f'LOADER_BASE={CAVE_LOW}',
+                  f'POOL_DESC=0x{POOL_DESC:08X}', BIN_PATH_DEF] + (
                       [f'LOAD_START_US=0x{LOAD_START_US:08X}'] if args.profile else []) + (
                       [f'READ_CAP=0x{args.read_cap:X}'] if args.read_cap is not None else [])
 
@@ -473,13 +515,25 @@ def progress(out, pct: int):
 
 
 WORKER = HERE / 'camera' / 'worker.S'
-for _name, _want in (('FRAMEBUF', WPOOL_PTR), ('WPOOL_SIZE', WPOOL_SIZE),
-                     ('WCODE_PTR', WCODE_PTR)):
-    _got = _equ(WORKER, _name)
-    if _got != _want:
-        raise SystemExit(f'worker.S has {_name} = '
-                         f'{_got if _got is None else hex(_got)} and this builder '
-                         f'has {hex(_want)}; putfile.py reads the builder\'s')
+# worker.S takes its fixed words from the camera profile header now, so the
+# agreement check resolves the profile's FW_W* constants instead of parsing a
+# literal out of worker.S.  putfile.py still reads the builder's words: this
+# is what proves the two agree.
+_WORKER_PROFILE = {502: 'worker_fp_502.h', 10302: 'worker_fpl_302.h'}
+_profile_text = (HERE / 'firmware' / _WORKER_PROFILE[camera.define]).read_text()
+def _fw_const(name):
+    import re as _re
+    m = _re.search(rf'^#define {name}\s+(0x[0-9A-Fa-f]+)', _profile_text, _re.M)
+    return int(m.group(1), 16) if m else None
+_worker_framebuf = _fw_const('FW_WFRAMEBUF')
+if _worker_framebuf is None or WPOOL_SIZE != _worker_framebuf + 4 or WCODE_PTR != _worker_framebuf + 8:
+    raise SystemExit(f'worker.S has FW_WFRAMEBUF = '
+                     f'{_worker_framebuf and hex(_worker_framebuf)} and this builder '
+                     f'has {hex(WPOOL_PTR)}/{hex(WPOOL_SIZE)}/{hex(WCODE_PTR)}; '
+                     f'putfile.py reads the builder\'s')
+if _worker_framebuf != WPOOL_PTR:
+    raise SystemExit(f'worker.S has FRAMEBUF = {hex(_worker_framebuf)} and this '
+                     f'builder has {hex(WPOOL_PTR)}; putfile.py reads the builder\'s')
 code = assemble(WORKER)
 words = to_words(code)
 end = (LOAD if args.loader else WORKER_AT) + len(code)
@@ -1037,69 +1091,30 @@ if args.loader:
         gentry = args.payload_addr + symbols(gsrc)[args.entry]
         gdisp = (gentry - HOOK - 8) >> 2
         secs.append((HOOK, struct.pack('<I', 0xEB000000 | (gdisp & 0xFFFFFF))))
-    # More than one entry, and a VBIN header has one word for it.  The card
-    # carries a trampoline that calls them all -- see asm/entries.S for
-    # why that is out here rather than each payload calling the next.  Added
-    # before the offsets are computed because it is a section like any other
-    # and moves everything after it; its length is known without its contents
-    # (the table is one word per entry plus a terminator), so nothing is
-    # circular.  Its words are patched below, once the offsets exist.
-    entry_count = ((worker_sec is not None) + len(boot_secs) + len(late_secs)
-                   + (args.vshl_entry is not None))
-    tramp_sec = None
-    if entry_count > 1:
-        tramp = assemble(HERE / 'asm' / 'entries.S', [])
-        tramp_tbl = symbols(HERE / 'asm' / 'entries.S', [])['table']
-        tramp_sec = len(secs)
-        secs.append((0, tramp + b'\x00' * (4 * (entry_count + 1))))
+    # The shared packer adds the entries.S trampoline before resolving offsets.
     if splash:
         # This mode temporarily owns the redraw prologue until UI cleanup.
         # A payload that patches the same word needs a different integration.
         for addr, blob in secs:
             if addr >= 0x40000000 and addr < 0xC0528704 and addr + len(blob) > 0xC0528700:
                 sys.exit('payload section overlaps the four-box redraw pause')
-    table = b''
-    body = b''
-    at = {}
-    for i, (addr, blob) in enumerate(secs):
-        if len(blob) % 4:
-            sys.exit(f'section for 0x{addr:08X} is {len(blob)} bytes; the loader '
-                     f'copies whole words, so every section must be a multiple of four')
-        table += struct.pack('<II', addr, len(blob))
-        at[i] = len(body)
-        body += blob + b'\x00' * (-len(blob) % 4)
-    # An entry below 0x40000000 is an offset into the staging buffer, which is
-    # the only way to name a place in a file whose address the allocator decides
-    # at run time.  stage2 adds the buffer to it.
-    def file_off(i):
-        return 16 + 8 * len(secs) + at[i]
-
     # The worker first, when there is more than one.  If a later entry hangs,
     # the shell is already answering and the camera can be asked what happened;
     # the other way round there is nothing to ask.
     entries = []
     if worker_sec is not None:
-        entries.append(file_off(worker_sec) + symbols(WORKER)['spawn'])
+        entries.append((worker_sec, symbols(WORKER)['spawn']))
     for sec_i, off in boot_secs:
-        entries.append(file_off(sec_i) + off)
+        entries.append((sec_i, off))
     if args.vshl_entry is not None:
         entries.append(args.vshl_entry)
     for sec_i, off in late_secs:
-        entries.append(file_off(sec_i) + off)
+        entries.append((sec_i, off))
 
-    if tramp_sec is not None:
-        tbl_at = file_off(tramp_sec) + tramp_tbl
-        words = struct.pack(f'<{len(entries) + 2}I', tbl_at, *entries, 0)
-        body = bytearray(body)
-        body[at[tramp_sec] + tramp_tbl:
-             at[tramp_sec] + tramp_tbl + len(words)] = words
-        body = bytes(body)
-        entry = file_off(tramp_sec)
-    elif entries:
-        entry = entries[0]
-    else:
-        entry = 0
-    binblob = struct.pack('<4sIII', b'VBIN', len(secs), entry, len(body)) + table + body
+    try:
+        binblob, entry, secs = build_vbin(secs, entries)
+    except ValueError as error:
+        sys.exit(str(error))
     binpath = DEST.parent / args.bin_name
     # Emit the actual container, retaining only section alignment. Shorter
     # card updates delete the previous file; file-length padding is obsolete.

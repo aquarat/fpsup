@@ -1,6 +1,15 @@
 .syntax unified
 .arm
 
+/* Optional caller-owned local slots, not the descriptor or head addresses
+ * themselves. ADR resolves within this blob; no runtime instruction fixups.
+ * Local and absolute forms of each slot are mutually exclusive. */
+#if defined(GYRO_DESC_LOCAL) && defined(GYRO_DESC_PTR)
+#error "choose GYRO_DESC_LOCAL or GYRO_DESC_PTR, not both"
+#endif
+#if defined(GYRO_LATCH_LOCAL) && defined(GYRO_LATCHED_HEAD_PTR)
+#error "choose GYRO_LATCH_LOCAL or GYRO_LATCHED_HEAD_PTR, not both"
+#endif
 #include "imu_stream.inc.S"
 
 /* Move whatever the coprocessor has written since last time into the stream.
@@ -31,15 +40,32 @@
 gyro_drain:
     push    {r0-r9, ip, lr}
 
+#ifdef GYRO_DESC_LOCAL
+    adr     r0, GYRO_DESC_LOCAL
+#else
     movw    r0, #:lower16:GYRO_DESC_PTR
     movt    r0, #:upper16:GYRO_DESC_PTR
+#endif
     ldr     r0, [r0]
     cmp     r0, #0
     beq     9f
     ldr     r8, [r0, #GYRO_DESC_RING]
     cmp     r8, #0
     beq     9f
+/* Optional diagnostic seam: caller validates and freezes one owned head word.
+ * Default producers retain the original instruction and byte behaviour. This
+ * does not freeze the ring or establish coherence; see the fp L coherence doc. */
+#if defined(GYRO_LATCH_LOCAL) || defined(GYRO_LATCHED_HEAD_PTR)
+#ifdef GYRO_LATCH_LOCAL
+    adr     r5, GYRO_LATCH_LOCAL
+#else
+    movw    r5, #:lower16:GYRO_LATCHED_HEAD_PTR
+    movt    r5, #:upper16:GYRO_LATCHED_HEAD_PTR
+#endif
+    ldr     r5, [r5]
+#else
     ldr     r5, [r8]                @ where the firmware is writing now
+#endif
 
     ldr     r6, g_ghead             @ where we left off -- one pc-relative load
     cmn     r6, #1                  @ HEAD_UNARMED: first visit, take the head

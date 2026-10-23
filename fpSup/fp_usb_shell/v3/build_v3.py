@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / 'research' / 'ui' / 'tools' / 'arm_text'))
 
 import cave                                   # the cave words, one copy
 from armasm import assemble, symbols
+from firmware import get_camera
 
 SL_DIR = 'fpSup'
 SL_SELF = 'LOADER.BIN'
@@ -265,16 +266,24 @@ def patch_sup(sup_id, rows, inner=b'', inner_entry=None, version=1, block_size=N
 
 def shell_sup(ep_patches=False, burst15=False, noptp=True):
     """The USB shell: worker.S's `spawn`, after the rendezvous block is zeroed and
-    the interface patch is in -- the two things pass 1 used to place."""
+    the interface patch is in -- the two things pass 1 used to place. fp only."""
     import patches
+    camera = get_camera('fp-5.02')
+    profile = (SHELL / 'firmware' / 'worker_fp_502.h').read_text()
+    state_defs = re.findall(r'^#define\s+FW_WSTATE\s+(.+)$', profile, re.M)
+    state_literal = (re.fullmatch(r'(0x[0-9A-Fa-f]+)\s*(?:/\*.*\*/)?', state_defs[0])
+                     if len(state_defs) == 1 else None)
+    if state_literal is None:
+        raise BuildError('fp worker profile: missing or malformed fixed FW_WSTATE')
+    state = int(state_literal.group(1), 16)
+    if state < 0x40000000 or state % 4 or state + 96 > 0x100000000:
+        raise BuildError('fp worker profile: FW_WSTATE must be a fixed aligned 96-byte region')
     worker = SHELL / 'camera' / 'worker.S'
-    code = assemble(worker)
-    m = re.search(r'^\.equ\s+STATE,\s*(0x[0-9A-Fa-f]+)', worker.read_text(), re.M)
-    if not m:
-        raise BuildError('worker.S: no STATE')
+    defines = camera.loader_defines()
+    code = assemble(worker, defines)
     # The worker's 96 rendezvous bytes, zero.  The cave survives a warm restart;
     # a stale 'VSHL' at +0 would make spawn think a worker is already running.
-    rows = [(int(m.group(1), 16), b'\0' * 96, 2)]
+    rows = [(state, b'\0' * 96, 2)]
     rows += [(a, struct.pack('<I', v), 2) for a, v, *_ in patches.IFACE]
     if ep_patches:
         rows += [(a, struct.pack('<I', v), 2) for a, v, *_ in patches.PUSH]
@@ -282,7 +291,7 @@ def shell_sup(ep_patches=False, burst15=False, noptp=True):
         rows += [(a, struct.pack('<I', v), 2) for a, v, *_ in patches.BURST15]
     if noptp:      # the firmware's PTP receiver steals shell commands (patches.py)
         rows += [(a, struct.pack('<I', v), 2) for a, v, *_ in patches.NOPTP]
-    return patch_sup('SHEL', rows, code, symbols(worker)['spawn'])
+    return patch_sup('SHEL', rows, code, symbols(worker, defines)['spawn'])
 
 
 def loader_words(autorun_text):

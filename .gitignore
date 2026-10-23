@@ -25,6 +25,11 @@ research/**/captures/
 # 規則見 INDEX.md 開頭;commit 前另有 .githooks/ 的檢查
 **/private/
 
+# Local fp L research inputs and reproducible build artifacts, never web assets.
+*.py[cod]
+/out/
+/projects/usb-shell-sup/cards/
+
 # LiDAR 不是 fp,另外處理
 projects/fp-lidar-direct/
 

@@ -14,6 +14,7 @@ static uint32_t win_base = BASE, win_len = SPAN, win_perm = 3;
 
 /* knobs */
 static int short_by, bad_crc, wrong_seq, lose_done;
+static int echo_request, win_result, win_bad_shape;
 static int reads, writes, refusals;
 
 /* fake state */
@@ -88,7 +89,8 @@ int libusb_bulk_transfer(libusb_device_handle *c, unsigned char ep,
     }
     if (ep == EP_OUT) {
         assert(st == IDLE);
-        assert(length == FRAME_SIZE + 4);
+        assert(length == FRAME_SIZE + 4 ||
+               (length == FRAME_SIZE && bytes[5] == CMD_PING));
         fpsh_frame tx;
         memcpy(&tx, bytes, sizeof tx);
         uint32_t want = tx.checksum;
@@ -101,6 +103,13 @@ int libusb_bulk_transfer(libusb_device_handle *c, unsigned char ep,
         memcpy(w, tx.payload, tx.payload_length);
         cur_addr = w[0]; cur_len = w[1]; cur_opts = w[2];
         *moved = length;
+        if (echo_request) {
+            /* Capture the actual wire bytes, including the original CRC.
+             * Nothing in the fake worker executes in this mode. */
+            memcpy(&reply, bytes, FRAME_SIZE);
+            st = REFUSAL;
+            return 0;
+        }
         if (cur_cmd == CMD_MEMR) {
             reads++;
             if (cur_len > MEM_XFER_MAX || !allowed(cur_addr, cur_len, 1)) refuse(4);
@@ -117,9 +126,19 @@ int libusb_bulk_transfer(libusb_device_handle *c, unsigned char ep,
                 ready_at = now_ms();
             }
         } else if (cur_cmd == CMD_WIN) {
-            win_base = w[1]; win_len = w[2]; win_perm = w[3];
-            uint32_t r = 0;
+            if (!win_result) {
+                win_base = w[1]; win_len = w[2]; win_perm = w[3];
+            }
+            uint32_t r = (uint32_t)win_result;
             make_reply(0, &r, 1);
+            if (win_bad_shape) {
+                if (win_bad_shape == 1) reply.flags = 1;
+                if (win_bad_shape == 2) reply.status = 2;
+                if (win_bad_shape == 3) reply.payload_length = 8;
+                if (win_bad_shape == 4) reply.payload_length = 0;
+                reply.checksum = 0;
+                reply.checksum = crc32((unsigned char *)&reply, FRAME_SIZE);
+            }
             st = REFUSAL;                      /* i.e. one frame then idle */
         } else assert(!"unexpected command");
         return 0;
@@ -188,9 +207,70 @@ static const char *request(const char *verb, uint32_t addr, size_t n, uint32_t o
     return answer;
 }
 
-int main(void)
+static void test_memr_echo(void)
+{
+    unsigned char data[65];
+    echo_request = 1;
+    const unsigned sizes[] = {64, 63, 65}; /* false-success regression first */
+    for (unsigned i = 0; i < sizeof sizes / sizeof *sizes; i++) {
+        request("MEMR", BASE, sizes[i], 0, data);
+        assert(strstr(answer, "ERR mem uncertain") && strstr(answer, "done=0"));
+        assert(strstr(answer, "echoed current request"));
+    }
+    echo_request = 0;
+
+    /* A CRC-valid request-shaped memory image is still legitimate data if
+     * it isn't the exact current request (this one has the previous seq). */
+    memcpy(ram, &reply, FRAME_SIZE);
+    assert(!strncmp(request("MEMR", BASE, 64, 0, data), "OKR ", 4));
+    assert(!memcmp(data, ram, FRAME_SIZE));
+    ram[4] = 99;                       /* arbitrary bytes beginning with FPSH */
+    assert(!strncmp(request("MEMR", BASE, 64, 0, data), "OKR ", 4));
+    assert(!memcmp(data, ram, FRAME_SIZE));
+}
+
+static void test_win_reply(void)
+{
+    uint32_t old_base = win_base, old_len = win_len, old_perm = win_perm;
+    echo_request = 1;
+    for (unsigned slot = 0; slot <= 1; slot++) {
+        assert(mem_win(slot, BASE + 4096, 8192, 1) == -1);
+        assert(strstr(g_why, "window reply shape"));
+        assert(win_base == old_base && win_len == old_len && win_perm == old_perm);
+    }
+    echo_request = 0;
+    for (win_bad_shape = 1; win_bad_shape <= 4; win_bad_shape++)
+        assert(mem_win(0, old_base, old_len, old_perm) == -1);
+    win_bad_shape = 0;
+    win_result = 2;
+    assert(mem_win(0, BASE + 4096, 8192, 1) == -2);
+    assert(strstr(g_why, "window refused code=2"));
+    assert(win_base == old_base && win_len == old_len && win_perm == old_perm);
+    win_result = 0;
+    assert(mem_win(0, old_base, old_len, old_perm) == 0);
+}
+
+int main(int argc, char **argv)
 {
     ram = calloc(1, SPAN);
+    assert(cam_open() == 0);
+    /* Select individual regressions for mutation testing without executing
+     * the larger round-trip suite. */
+    if (argc == 2) {
+        if (!strcmp(argv[1], "memr-echo")) test_memr_echo();
+        else if (!strcmp(argv[1], "win-reply")) test_win_reply();
+        else assert(!"unknown test");
+        free(ram);
+        return 0;
+    }
+    test_memr_echo();
+    test_win_reply();
+    /* Legacy PING's genuine empty reply and a request echo are identical.
+     * Preserve this limitation explicitly; don't claim PING proves execution. */
+    echo_request = 1;
+    char pong[64];
+    assert(exchange(CMD_PING, NULL, pong, sizeof pong, 0) == 0);
+    echo_request = 0;
     unsigned char *a = malloc(SPAN), *b = malloc(SPAN);
     for (size_t i = 0; i < SPAN; i++) a[i] = (unsigned char)(i * 131 + (i >> 9));
 

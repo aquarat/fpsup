@@ -19,3 +19,7 @@ h2u_asess/
 # notes kept outside this repo (symlinks into the research tree)
 focus/geometry/NATIVE_CONFIRMATION_AUDIT.md
 focus/geometry/NATIVE_HOOK_PLAN.md
+
+# Local fp L build artifacts, never web assets.
+/out/
+/projects/usb-shell-sup/cards/

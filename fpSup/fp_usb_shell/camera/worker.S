@@ -1,6 +1,10 @@
 .syntax unified
 .arm
 .text
+#include "../firmware/worker.h"
+#ifndef FPSUP_PONG_ACK
+#define FPSUP_PONG_ACK (FPSUP_CAMERA == 10302)
+#endif
 /* ============================================================================
  * USB shell worker — runs on the camera, serves the PTP gadget's bulk pipes.
  * ============================================================================
@@ -79,18 +83,18 @@
  *     +3C first gate reason (0x80000000 | DALEPENA<<8 | state)
  * ========================================================================== */
 
-/* --- firmware entry points ------------------------------------------------ */
-.equ FN_CRETSK,   0xC0016A58      /* tk_cre_tsk(descriptor) -> id             */
-.equ FN_STATSK,   0xC0016BC0      /* tk_sta_tsk(id, code)                     */
-.equ FN_DELAY,    0xC01F89C4      /* delay(ms), yields the CPU                */
-.equ FN_ENDX,     0xC01E6D49      /* EndTransfer(logical ep)         [thumb]  */
-.equ FN_STARTX,   0xC01E6B81      /* StartTransfer(physical ep)      [thumb]  */
-.equ FN_WAIT,     0xC01E4E81      /* Wait(logical ep, timeout)       [thumb]  */
-.equ FN_SHINIT,   0xC03D9A10      /* shell context one-time init              */
-.equ FN_SHPUSH,   0xC03D9AC0      /* push an output sink                      */
-.equ FN_SHPOP,    0xC03D9B20      /* pop the output sink                      */
-.equ FN_SHRUN,    0xC03D9C20      /* tokenise, dispatch and run one line      */
-.equ FN_VSNPRINT, 0xC0013F48      /* vsnprintf(buf, size, fmt, va)            */
+/* --- firmware entry points (the camera profile header) -------------------- */
+.equ FN_CRETSK,   FW_WCRETSK      /* tk_cre_tsk(descriptor) -> id             */
+.equ FN_STATSK,   FW_WSTATSK      /* tk_sta_tsk(id, code)                     */
+.equ FN_DELAY,    FW_WDELAY       /* delay(ms), yields the CPU                */
+.equ FN_ENDX,     FW_WENDX        /* EndTransfer(logical ep)         [thumb]  */
+.equ FN_STARTX,   FW_WSTARTX      /* StartTransfer(physical ep)      [thumb]  */
+.equ FN_WAIT,     FW_WWAIT        /* Wait(logical ep, timeout)       [thumb]  */
+.equ FN_SHINIT,   FW_WSHINIT      /* shell context one-time init              */
+.equ FN_SHPUSH,   FW_WSHPUSH      /* push an output sink                      */
+.equ FN_SHPOP,    FW_WSHPOP       /* pop the output sink                      */
+.equ FN_SHRUN,    FW_WSHRUN       /* tokenise, dispatch and run one line      */
+.equ FN_VSNPRINT, FW_WVSNPRINT    /* vsnprintf(buf, size, fmt, va)            */
 
 /* --- firmware data -------------------------------------------------------- */
 /* --- the worker's own pool ------------------------------------------------
@@ -106,9 +110,9 @@
  * Fixed addresses in the cave, NOT words inside the worker's own image:
  * swapworker.py rewrites that image while the worker is running, and a live
  * pool pointer inside it would be swapped out from under the task. */
-.equ FRAMEBUF,    0xC072F050      /* the address, or zero if refused           */
-.equ WPOOL_SIZE,  0xC072F054      /* what was asked for -- putfile reads it    */
-.equ WCODE_PTR,   0xC072F058      /* the SECOND allocation: this worker's own
+.equ FRAMEBUF,    FW_WFRAMEBUF      /* the address, or zero if refused           */
+.equ WPOOL_SIZE,  FW_WFRAMEBUF + 4 /* what was asked for -- putfile reads it    */
+.equ WCODE_PTR,   FW_WFRAMEBUF + 8 /* the SECOND allocation: this worker's own
                                    * code.  Its own block, not an offset inside
                                    * the first one -- see the note in spawn     */
 .equ WPOOL_BYTES, 0x100000        /* 1 MiB, as before: putfile stages files at
@@ -117,18 +121,18 @@
 .equ H_ADDR,      0xC001D7F0      /* (desc) -> address                         */
 .equ F_DCACHE,    0xC000E91C      /* D-cache clean/invalidate + barriers       */
 .equ F_ICACHE,    0xC000EABC      /* whole I-cache invalidate + barriers       */
-.equ TRB_OUT,     0xC31E3268      /* endpoint TRB table [1]: EP 0x01 OUT      */
-.equ TRB_IN,      0xC31E326C      /* endpoint TRB table [2]: EP 0x82 IN       */
-.equ USB_STATE,   0xC31E3748      /* 4 means the link is suspended            */
-.equ DALEPENA,    0x2100C720      /* DWC3: bit N = physical endpoint N enabled */
-.equ EP_MASK,     0x24            /* physical 2 (EP 0x01 OUT) | 5 (EP 0x82 IN) */
-.equ SHELL_CTX,   0xC3756904      /* firmware shell context singleton         */
+.equ TRB_OUT,     FW_WTRB_OUT      /* endpoint TRB table [1]: EP 0x01 OUT      */
+.equ TRB_IN,      FW_WTRB_IN      /* endpoint TRB table [2]: EP 0x82 IN       */
+.equ USB_STATE,   FW_WUSB_STATE      /* 4 means the link is suspended            */
+.equ DALEPENA,    FW_WDALEPENA      /* DWC3: bit N = physical endpoint N enabled */
+.equ EP_MASK,     FW_WEP_MASK            /* physical 2 (EP 0x01 OUT) | 5 (EP 0x82 IN) */
+.equ SHELL_CTX,   FW_WSHELL_CTX      /* firmware shell context singleton         */
 
-.equ PHYS_OUT,    2
-.equ PHYS_IN,     5
-.equ LOG_OUT,     1
-.equ LOG_IN,      2
-.equ TRB_ARMED,   0x813
+.equ PHYS_OUT,    FW_WPHYS_OUT
+.equ PHYS_IN,     FW_WPHYS_IN
+.equ LOG_OUT,     FW_WLOG_OUT
+.equ LOG_IN,      FW_WLOG_IN
+.equ TRB_ARMED,   FW_WTRB_ARMED
 .equ TIMEOUT,     50000         /* waiting for a command: no hurry            */
 /* Waiting for the host to collect a reply is a different question, and fifty
  * seconds is the wrong answer to it. The host gives up after two hundred
@@ -143,12 +147,43 @@
 .equ TIMEOUT_IN,  300
 
 /* --- our memory ----------------------------------------------------------- */
-.equ STATE,       0xC072F000      /* 16 words                                 */
-.equ CAP_LEN,     0xC072F040      /* bytes captured from the shell            */
-.equ SWAP_MAGIC,  0xC072F044      /* "SWAP" here and an address below means go */
-.equ SWAP_ADDR,   0xC072F048
-.equ CAP_PTR,     0xC072F04C      /* where the reply's bytes are, if not the
-                                     capture buffer                           */
+/* The worker's state words. fp keeps them at fixed cave addresses (FW_WSTATE
+ * etc. defined, and PW below is a plain LDA — the fp build is unchanged
+ * byte-for-byte). fp L has no cave: the counterpart range is IMU-owned image
+ * space, and every word after the pool publication triplet is live stock
+ * shell state (docs/FPL_WORKER_STATE_AUDIT.md). There the five words are
+ * offsets into the pool the worker publishes at FRAMEBUF, and PW resolves
+ * one at run time — or leaves ZERO when no pool is published yet, which only
+ * spawn's first-run guard can see; every other site runs after publication,
+ * where the pool is the worker's own allocation and cannot be zero. */
+#ifdef FW_WSTATE
+/* fp: fixed cave addresses. CPP defines, not .equ -- a .equ of another
+ * symbol makes GAS emit an absolute-symbol relocation that the camera-side
+ * assembler refuses inside an immediate; the preprocessor folds these to
+ * literals before GAS ever sees them, which is also what keeps the fp build
+ * byte-identical. */
+#define STATE      FW_WSTATE
+#define CAP_LEN    FW_WCAP_LEN
+#define SWAP_MAGIC FW_WSWAP_MAGIC
+#define SWAP_ADDR  FW_WSWAP_ADDR
+#define CAP_PTR    FW_WCAP_PTR
+.macro PW reg, label
+    LDA     \reg, \label
+.endm
+#else
+/* fp L: no cave. The five words are offsets into the published pool. */
+#define STATE      FW_WSTATE_OFF
+#define CAP_LEN    FW_WCAP_LEN_OFF
+#define SWAP_MAGIC FW_WSWAP_MAGIC_OFF
+#define SWAP_ADDR  FW_WSWAP_ADDR_OFF
+#define CAP_PTR    FW_WCAP_PTR_OFF
+.macro PW reg, off
+    LDA     \reg, FRAMEBUF
+    ldr     \reg, [\reg]
+    cmp     \reg, #0
+    addne   \reg, \reg, #(\off)
+.endm
+#endif
 .equ SWAP_WORD,   0x50415753      /* "SWAP" */
 /* The capture buffer lives in the DMA pool, not the code cave.  In the cave it
  * could only be about 1.4 KiB before running into the injection ceiling, and a
@@ -206,9 +241,11 @@
 .equ MEM_TMO,     500             /* ms, plus one per 32 KiB of the transfer  */
 
 /* --- bootstrap ------------------------------------------------------------ */
-.equ HOOK_SITE,   0xC00D0794      /* gyro callback, borrowed once             */
-.equ HOOK_ORIG,   0xFA046FD7      /* the BLX this site normally holds         */
-.equ HOOK_TARGET, 0xC01EC6F9      /* what that BLX called (thumb)             */
+#ifdef FW_WBOOTSTRAP
+.equ HOOK_SITE,   FW_WHOOK_SITE   /* gyro callback, borrowed once             */
+.equ HOOK_ORIG,   FW_WHOOK_ORIG   /* the BLX this site normally holds         */
+.equ HOOK_TARGET, FW_WHOOK_TARGET /* what that BLX called (thumb)             */
+#endif
 
 .equ TASK_PRIO,   28              /* verified safe                            */
 .equ TASK_STACK,  0x2000          /* 8 KiB; the stack pool is shared - do not
@@ -216,7 +253,7 @@
 .equ FRAME,       64
 .equ CHUNK,       44
 .equ BULK_MIN,    128             /* replies at least this big go in one transfer */
-.equ UNCACHED,    0x40000000
+.equ UNCACHED,    FW_WFRAME_CPU_OFFSET /* CPU frame view, firmware-specific */
 .equ TO_BUS,      0xC0000000      /* +0xC0000000 mod 2^32 == -0x40000000      */
 
 .macro LDA reg, value
@@ -245,6 +282,7 @@
  * Its two hundred bytes used to cost fifty `mem set` commands. They now arrive
  * in a file, so keeping it costs nothing worth counting.
  */
+#ifdef FW_WBOOTSTRAP
 .global bootstrap
 bootstrap:
     push    {r4, r5, lr}
@@ -267,6 +305,8 @@ bootstrap:
     mov     r0, r4
     pop     {r4, r5, pc}
 
+#endif
+
 /* --- spawn: the VBIN entry.  Start the worker, and COME BACK. --------------
  *
  * stage2 tail-branches to the entry named in the file's header, and the entry
@@ -288,12 +328,30 @@ bootstrap:
     .global spawn
 spawn:
     push    {r4, r5, r6, r7, r8, lr}
-    LDA     r5, STATE
+    /* The one-worker claim.  fp: fixed STATE, claimed before anything else.
+     * fp L: STATE exists only inside a pool this camera has published, so a
+     * ZERO publication word (the honest first-run case -- the boot zeroes
+     * this word, and a refused allocation publishes zero too) skips the check
+     * and claims after the pool exists; a PUBLISHED pool carrying the magic
+     * at STATE is a live worker of ours, and this run stands down without
+     * allocating anything. */
+#ifdef FW_WSTATE
+    PW      r5, STATE
     ldr     r0, [r5]
     LDA     r1, 0x4C485356              @ 'VSHL' -- already claimed?
     cmp     r0, r1
     beq     2f                          @ yes: one worker, not two
     str     r1, [r5]
+#else
+    PW      r5, STATE
+    cmp     r5, #0
+    beq     3f                          @ nothing published: claim once there is
+    ldr     r0, [r5]
+    LDA     r1, 0x4C485356
+    cmp     r0, r1
+    beq     2f                          @ a worker of ours is alive: stand down
+3:
+#endif
 
     /* TWO allocations, not one pool with an agreed offset inside it.
      *
@@ -355,6 +413,13 @@ spawn:
     beq     2f
     mov     r0, #WPOOL_BYTES
     str     r0, [r4, #4]                @ WPOOL_SIZE
+#ifndef FW_WSTATE
+    /* fp L: the pool just published is ours (a refusal took the beq above),
+     * so STATE exists now -- claim it before a second run can look. */
+    PW      r5, STATE
+    LDA     r1, 0x4C485356              @ 'VSHL'
+    str     r1, [r5]
+#endif
 
     /* Copy the body into its own allocation.
      *
@@ -381,7 +446,7 @@ spawn:
     LDA     r12, F_ICACHE
     blx     r12
 
-    LDA     r5, STATE                   @ reloaded: r5 was the copy's counter
+    PW      r5, STATE                   @ reloaded: r5 was the copy's counter
     sub     sp, sp, #32
     mov     r0, #0
     str     r0, [sp, #0]                @ exinf
@@ -458,7 +523,7 @@ capture:
     push    {r4, r5, lr}
     mov     r2, r0                      @ fmt
     add     r3, sp, #12                 @ &a1
-    LDA     r4, CAP_LEN
+    PW      r4, CAP_LEN
     ldr     r5, [r4]
     LDA     r0, FRAMEBUF
     ldr     r0, [r0]
@@ -485,7 +550,7 @@ capture_done:
  * ========================================================================== */
 serve:
     push    {r4, r5, r6, r7, r8, r9, r10, lr}   @ 8 words keeps sp 8-byte aligned
-    LDA     r4, STATE
+    PW      r4, STATE
     /* A new worker, including a live swap, must not report a previous pool
      * user's bytes as a completed upload.  The tuple is private to this task
      * and lives clear of the command/capture and staging regions. */
@@ -525,14 +590,14 @@ next_round:
      * Two words rather than one: an address alone is a jump to whatever
      * happened to be written, and this runs every round. The magic is cleared
      * before the branch so a half-written pair cannot fire twice. */
-    LDA     r0, SWAP_MAGIC
+    PW      r0, SWAP_MAGIC
     ldr     r1, [r0]
     LDA     r2, SWAP_WORD
     cmp     r1, r2
     bne     no_swap
     mov     r1, #0
     str     r1, [r0]
-    LDA     r0, SWAP_ADDR
+    PW      r0, SWAP_ADDR
     ldr     r0, [r0]
     cmp     r0, #0
     bxne    r0
@@ -583,7 +648,7 @@ got_command:
     LDA     r0, FRAMEBUF
     ldr     r6, [r0]
     mov     r0, #UNCACHED
-    add     r6, r6, r0                  @ r6 = uncached view of the frame
+    add     r6, r6, r0                  @ r6 = profile-selected CPU frame view
     add     r10, r6, #20                @ payload
 
     ldrb    r0, [r6, #5]
@@ -615,7 +680,7 @@ got_command:
     LDA     r12, FN_SHINIT
     blx     r12
 shell_ready:
-    LDA     r0, CAP_LEN
+    PW      r0, CAP_LEN
     mov     r1, #0
     str     r1, [r0]
 
@@ -633,7 +698,7 @@ shell_ready:
     LDA     r12, FN_SHPOP
     blx     r12                         @ hand the console back to the UART
 
-    LDA     r0, CAP_LEN
+    PW      r0, CAP_LEN
     ldr     r9, [r0]
 
     /* Send from wherever the answer already is.
@@ -649,7 +714,7 @@ shell_ready:
      * A payload that already knows where its bytes are puts the address here
      * and the DMA reads them where they lie. The capture buffer stays for what
      * it is actually for: catching what the firmware's printf writes. */
-    LDA     r0, CAP_PTR
+    PW      r0, CAP_PTR
     ldr     r8, [r0]
     cmp     r8, #0
     bne     reply_entry
@@ -659,11 +724,23 @@ shell_ready:
     b       reply_entry
 
 reply_nothing:
+    /* Fallback acknowledgements (including PING and unknown commands) carry
+     * PONG on fp L, not an unsupported-command protocol extension. Keep this
+     * six-instruction/24-byte block the same size as the legacy empty ack.
+     * reply_entry's byte copy permits identical payload source/destination. */
+#if FPSUP_PONG_ACK
+    add     r8, r6, #20
+    LDA     r0, 0x474E4F50              @ little-endian "PONG"
+    str     r0, [r8]
+    mov     r9, #4
+    b       reply_entry
+#else
     mov     r9, #0
     LDA     r0, FRAMEBUF
     ldr     r8, [r0]
     add     r8, r8, #CAP_OFF
     b       reply_entry
+#endif
 
 /* --- upload protocol: one 16 KiB OUT, then one FPSH acknowledgment ---------
  * The source is the uncached view of the worker-owned frame buffer. Only
@@ -1060,7 +1137,7 @@ mem_write_abort:
  * frame found whole in that buffer (camera, 2026-10-06); the 1-in-20..60 PUT
  * losses and PTP's 0x2003 answers were the same race.
  * So it is set again the moment a transfer of ours completes.  Clobbers r0, r1. */
-.equ OUT_BUSY,    0xC31E3974
+.equ OUT_BUSY,    FW_WOUT_BUSY
 out_owned:
     LDA     r0, OUT_BUSY
     mov     r1, #1
@@ -1304,7 +1381,7 @@ fill_header:
 
 reply_done:
     mov     r0, #0
-    LDA     r1, CAP_PTR                 @ one command's answer, not the next one's
+    PW      r1, CAP_PTR                 @ one command's answer, not the next one's
     str     r0, [r1]
     str     r0, [r4, #0x08]             @ clean round: nothing to end next time
     ldr     r0, [r4, #0x20]
@@ -1365,7 +1442,7 @@ hold:
 
 /* --- arm EP 0x01 OUT for one command; returns the StartTransfer status ----- */
 arm_out:
-    push    {r4, r5, r6, r7, lr}
+    push    {r4, r5, r6, r7, r12, lr}
 
     /* Only after a round that went wrong.
      *
@@ -1412,7 +1489,7 @@ arm_out_go:
     mov     r0, #PHYS_OUT
     LDA     r12, FN_STARTX
     blx     r12
-    pop     {r4, r5, r6, r7, pc}
+    pop     {r4, r5, r6, r7, r12, pc}
 
 /* --- the block alone, because the host said it knows the length ----------- */
 reply_raw:
@@ -1493,7 +1570,7 @@ reply_bulk:
  * the data was cached or not: 150 ms of every 16 KiB UP01 chunk, i.e. the
  * whole of the 0.1 MiB/s upload.  The firmware routine on the same uncached
  * frame: 0.6 us a byte, same value as zlib.crc32 (camera, 2026-10-06). */
-.equ FW_CRC32,    0xC06AE998
+.equ FW_CRC32,    FW_WCRC32
 crc_block:
     push    {r4, lr}
     LDA     r12, FW_CRC32
@@ -1503,7 +1580,7 @@ crc_block:
 
 /* --- arm EP 0x82 IN with r9 bytes at r8, no copy -------------------------- */
 arm_in_block:
-    push    {r4, r5, r6, r7, lr}
+    push    {r4, r5, r6, r7, r12, lr}
     mov     r0, #TO_BUS
     add     r5, r8, r0
     LDA     r0, TRB_IN
@@ -1518,11 +1595,11 @@ arm_in_block:
     mov     r0, #PHYS_IN
     LDA     r12, FN_STARTX
     blx     r12
-    pop     {r4, r5, r6, r7, pc}
+    pop     {r4, r5, r6, r7, r12, pc}
 
 /* --- arm EP 0x82 IN with the 64-byte reply frame -------------------------- */
 arm_in:
-    push    {r4, r5, r6, r7, lr}
+    push    {r4, r5, r6, r7, r12, lr}
     LDA     r0, FRAMEBUF
     ldr     r6, [r0]
     mov     r0, #TO_BUS
@@ -1540,7 +1617,7 @@ arm_in:
     mov     r0, #PHYS_IN
     LDA     r12, FN_STARTX
     blx     r12
-    pop     {r4, r5, r6, r7, pc}
+    pop     {r4, r5, r6, r7, r12, pc}
 
     .align  2
 wbody_end:

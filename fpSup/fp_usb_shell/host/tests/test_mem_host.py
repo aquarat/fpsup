@@ -13,7 +13,8 @@ class MemHostTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='fpshd-mem-test-') as tmp:
             binary = pathlib.Path(tmp) / 'mem-harness'
             subprocess.run([
-                'cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-D_DARWIN_C_SOURCE',
+                'cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                '-D_DARWIN_C_SOURCE', '-D_DEFAULT_SOURCE',
                 '-I', str(HERE / 'ep83_fake_libusb'),
                 str(HERE / 'mem_harness.c'), '-lz', '-o', str(binary),
             ], check=True, capture_output=True, text=True)

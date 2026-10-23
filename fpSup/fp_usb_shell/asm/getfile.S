@@ -1,6 +1,7 @@
 .syntax unified
 .arm
 .text
+#include "../firmware/loader.h"
 /* ============================================================================
  * getfile — read a file from the card into memory, where the host can see it.
  * ============================================================================
@@ -47,6 +48,9 @@
  * the address in.  The value below is only so the file still assembles on
  * its own -- nothing reaches it through a build. */
 #ifndef P
+#if FPSUP_CAMERA != 502
+#error getfile requires explicit owned parameter storage on this camera
+#endif
 .equ P,        0xC072F700
 #endif
 .equ P_ACTUAL, 0x04
@@ -62,16 +66,16 @@
 
 .equ FMT_S,    0xC0BABB38
 
-.equ F_MGR,    0xC0444658
-.equ F_VOL,    0xC0444698
-.equ F_CTOR,   0xC0365E90
-.equ F_OPEN,   0xC0365FB0
-.equ F_READ,   0xC0366060     /* (obj, buf, len, *actual) */
-.equ F_CLOSE,  0xC0366020
-.equ F_DTOR,   0xC0365ED0
+.equ F_MGR,    FW_F_MGR
+.equ F_VOL,    FW_F_VOL
+.equ F_CTOR,   FW_F_CTOR
+.equ F_OPEN,   FW_F_OPEN
+.equ F_READ,   FW_F_READ     /* (obj, buf, len, *actual) */
+.equ F_CLOSE,  FW_F_CLOSE
+.equ F_DTOR,   FW_F_DTOR
 
-.equ H_GET,    0xC001D740     /* (desc, type, size, 0)                        */
-.equ H_ADDR,   0xC001D7F0     /* (desc) -> address                            */
+.equ H_GET,    FW_H_GET     /* (desc, type, size, 0)                        */
+.equ H_ADDR,   FW_H_ADDR     /* (desc) -> address                            */
 .equ HEAP,     10             /* what the camera's own file loads use         */
 
 .macro LDA reg, value
@@ -97,6 +101,7 @@ entry:
     cmp     r0, #0
     bne     have_buffer
 
+#if FPSUP_CAMERA == 502
     add     r5, r4, #P_DESC
     mov     r0, #0
     str     r0, [r5]
@@ -115,6 +120,8 @@ entry:
     str     r0, [r4, #P_BUF]
     cmp     r0, #0
     bne     have_buffer
+#endif
+    /* fp L host supplies bounded worker staging; never allocate implicitly. */
     mov     r0, #5                      @ refused: say so rather than reading
     str     r0, [r4, #P_STATUS]         @ a file into address zero
     b       done
@@ -163,6 +170,7 @@ destroy:
     LDA     ip, F_DTOR
     blx     ip
 
+#if FPSUP_CAMERA == 502
     ldr     r0, [r4, #P_STATUS]
     cmp     r0, #2
     adreq   r1, msg_ok
@@ -170,14 +178,17 @@ destroy:
     ldr     ip, [r8]
     LDA     r0, FMT_S
     blx     ip
+#endif
 
 done:
     mov     r0, #0
     pop     {r4, r5, r6, r7, r8, pc}
 
+#if FPSUP_CAMERA == 502
 msg_ok:
     .asciz  "getfile: read"
     .align  2
 msg_bad:
     .asciz  "getfile: FAILED, read status at 0xC072F708"
     .align  2
+#endif

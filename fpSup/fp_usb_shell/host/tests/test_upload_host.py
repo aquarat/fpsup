@@ -13,7 +13,7 @@ class UploadHostTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='fpshd-upload-test-') as tmp:
             binary = pathlib.Path(tmp) / 'upload-harness'
             subprocess.run([
-                'cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                'cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-D_DEFAULT_SOURCE',
                 '-I', str(HERE / 'ep83_fake_libusb'),
                 str(HERE / 'upload_harness.c'), '-lz', '-o', str(binary),
             ], check=True, capture_output=True, text=True)

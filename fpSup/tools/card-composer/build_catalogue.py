@@ -388,6 +388,10 @@ def refs(product='og3k'):
     out = {}
     for name, debug in (('plain', False), ('shell', True)):
         d = tmp / name
+        if debug:
+            frozen_shell_reference(out['plain'], d, tmp)
+            out[name] = d
+            continue
         cmd = [sys.executable, str(GYRO / 'build_base_card.py'),
                '--edition', 'gcsv', '--version', 'catalogue-reference',
                '--four-box-bar',
@@ -399,8 +403,6 @@ def refs(product='og3k'):
             cmd += ['--boot-bin', f'{bp}:0']
         if og_entry:
             cmd += ['--vshl-entry', f'0x{og_entry:08X}']
-        if debug:
-            cmd.append('--debug')
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode:
             sys.stderr.write(r.stdout + r.stderr)
@@ -414,6 +416,55 @@ def refs(product='og3k'):
     out['_tmp'] = tmp
     REFS[product] = out
     return out
+
+
+def frozen_shell_reference(plain, out, tmp):
+    """Feed frozen Shell + independently built gyro/OG to the shared builder.
+
+    Decode calls with semantic_signature, not the browser merge's relocation
+    implementation. The builder owns the new trampoline and offsets.
+    """
+    tramp, tbl = trampoline()
+    fixed, boots, absolute, seen = [], [], [], set()
+    push = {(r['a'], base64.b64decode(r['b'])) for r in push_sections()}
+    for source, shell in ((latest('usbshell'), True), (plain, False)):
+        blob = reference_bin(payload(source).read_bytes())
+        helper, records, calls = semantic_signature(blob, tramp, tbl)
+        records = records.copy()
+        records.subtract([helper])
+        for call in calls:
+            if call[0] == 'absolute':
+                absolute.append(call[1])
+            else:
+                _, body, delta = call
+                boots.append((body, delta))
+                records.subtract([(0, body)])
+        for (address, body), count in records.items():
+            if count < 0 or (count and not address):
+                raise ValueError('reference has an uncalled or repeated run-in-place section')
+            if shell and (address, body) in push:
+                continue
+            if count and (address, body) not in seen:
+                seen.add((address, body))
+                fixed.append((address, body))
+    if len(absolute) > 1:
+        raise ValueError('reference supports only one final absolute entry')
+    cmd = [sys.executable, str(SHELL_DIR / 'build_autorun.py'), '--loader',
+           '--no-shell', '--four-box-bar', '--out', str(out / 'AutoRun.txt')]
+    for i, (address, body) in enumerate(fixed):
+        path = tmp / f'shell_fixed_{i}.bin'
+        path.write_bytes(body)
+        cmd += ['--also-bin', f'0x{address:X}:{path}']
+    for i, (body, delta) in enumerate(boots):
+        path = tmp / f'shell_boot_{i}.bin'
+        path.write_bytes(body)
+        cmd += ['--boot-bin', f'{path}:{delta}']
+    if absolute:
+        cmd += ['--vshl-entry', f'0x{absolute[0]:X}']
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode:
+        sys.stderr.write(r.stdout + r.stderr)
+        raise SystemExit('could not build frozen shell reference')
 
 
 def payload(d):
@@ -697,6 +748,38 @@ def semantic_signature(blob, tramp, tramp_tbl):
     content = Counter(record for i, record in enumerate(recs)
                       if i != trampoline_index)
     return recs[0], content, tuple(resolve(value) for value in calls)
+
+
+def reference_bin(blob):
+    """Remove only verified zero padding outside a complete VBIN container.
+
+    For new reference comparisons only; frozen artifact round trips stay exact.
+    A declared tail (e.g. Lossless) is not padding and must never pass here.
+    """
+    if len(blob) < 16:
+        raise ValueError('truncated VBIN header')
+    magic, count, _, size = struct.unpack_from('<4sIII', blob)
+    start = 16 + 8 * count
+    end = start + size
+    if magic != b'VBIN' or end > len(blob) or start > len(blob):
+        raise ValueError('invalid VBIN extent')
+    lengths = [struct.unpack_from('<II', blob, 16 + 8 * i)[1]
+               for i in range(count)]
+    if sum(n + (-n % 4) for n in lengths) != size:
+        raise ValueError('VBIN section lengths disagree with header')
+    if any(blob[end:]):
+        raise ValueError('nonzero tail is not VBIN padding')
+    return blob[:end]
+
+
+def reference_autorun(text):
+    """Accept only the exact legacy pad suffix produced by autorun()."""
+    body, marker, _ = text.partition(FILLER)
+    if not marker:
+        return text
+    if autorun(body, '@@BANNER@@') != text:
+        raise ValueError('invalid AutoRun padding suffix')
+    return body
 
 
 def autorun(template, banner):
@@ -1056,6 +1139,7 @@ def main():
          merge(['shell', 'gyro', 'og2k']), payload(refs('og2k')['shell']).read_bytes(), True),
     ]
     for what, got, want, semantic in merges:
+        got, want = reference_bin(got), reference_bin(want)
         if semantic:
             try:
                 ok = (semantic_signature(got, tramp, tramp_tbl)
@@ -1074,7 +1158,7 @@ def main():
             except Exception as error:
                 print(f'          (no section diff: {error})')
         bad |= not ok
-        proof = 'same sections + ordered entries' if semantic else 'byte-identical'
+        proof = 'same sections + ordered entries' if semantic else 'byte-identical VBIN (verified padding excluded)'
         print(f'  {"OK  " if ok else "FAIL"}  {what} [{proof}]')
     autos = [
         ('AutoRun plain      == og3k_gyro_release',
@@ -1094,7 +1178,7 @@ def main():
     # starved the worker.  A stored artefact predating a loader change is
     # information, not a failure.
     for what, got, want in autos:
-        ok = got == want
+        ok = reference_autorun(got) == reference_autorun(want)
         bad |= not ok
         print(f'  {"OK  " if ok else "FAIL"}  {what}')
     if bad:
