@@ -5,6 +5,19 @@
 #ifndef FPSUP_PONG_ACK
 #define FPSUP_PONG_ACK (FPSUP_CAMERA == 10302)
 #endif
+/* Offline M1 refusal profile. No native lock/reopen boundary has been proved;
+ * consequently there is NO supported admitted lifetime in this profile. This
+ * is not a mode/status/epoch guard and must not be enabled as a live upgrade.
+ * 0 retains the reviewed images exactly. See FPL_USB_LIFECYCLE_IMPLEMENTATION. */
+#ifndef FPSUP_USB_CLOSED_ADMISSION
+#define FPSUP_USB_CLOSED_ADMISSION 0
+#endif
+#if FPSUP_USB_CLOSED_ADMISSION != 0 && FPSUP_USB_CLOSED_ADMISSION != 1
+#error FPSUP_USB_CLOSED_ADMISSION must be 0 or 1
+#endif
+#if FPSUP_USB_CLOSED_ADMISSION && FPSUP_CAMERA != 10302
+#error Closed admission is an offline fp L profile only
+#endif
 /* ============================================================================
  * USB shell worker — runs on the camera, serves the PTP gadget's bulk pipes.
  * ============================================================================
@@ -327,6 +340,12 @@ bootstrap:
  * of whatever it interrupts, so eight-byte alignment is not optional. */
     .global spawn
 spawn:
+#if FPSUP_USB_CLOSED_ADMISSION
+    /* Entry ABI returns normally; no allocation/publication or second task.
+     * A closed profile cannot infer ownership from an existing publication. */
+    mov     r0, #0
+    bx      lr
+#endif
     push    {r4, r5, r6, r7, r8, lr}
     /* The one-worker claim.  fp: fixed STATE, claimed before anything else.
      * fp L: STATE exists only inside a pool this camera has published, so a
@@ -571,6 +590,11 @@ serve:
     bne     1b
 
 next_round:
+#if FPSUP_USB_CLOSED_ADMISSION
+    /* Before even the legacy handoff: this profile cannot inherit tickets or
+     * transfer control to an unreviewed body through a stale SWAP request. */
+    b       lifecycle_closed
+#endif
     ldr     r0, [r4, #0x0C]
     add     r0, r0, #1
     str     r0, [r4, #0x0C]
@@ -636,6 +660,9 @@ no_swap:
     cmp     r0, #0
     bne     fault                       @ idle timeout: just arm again
 got_command:
+#if FPSUP_USB_CLOSED_ADMISSION
+    b       lifecycle_closed
+#endif
     bl      out_owned
     mov     r0, #1
     str     r0, [r4, #0x34]             @ phase 1: a command arrived
@@ -1011,6 +1038,9 @@ mem_read:
  *   2. the host sends exactly `length` bytes; answer DONE {0, received, crc}
  * The data TRB is armed BEFORE READY goes out, so the host cannot outrun it. */
 mem_write:
+#if FPSUP_USB_CLOSED_ADMISSION
+    b       lifecycle_closed
+#endif
     bl      frame_ok
     cmp     r0, #0
     movne   r0, #1
@@ -1111,6 +1141,9 @@ mem_write:
     b       reply_done
 
 mem_write_lost:
+#if FPSUP_USB_CLOSED_ADMISSION
+    b       lifecycle_closed
+#endif
     mov     r0, #LOG_OUT                @ nothing may land after we give up
     LDA     r12, FN_ENDX
     blx     r12
@@ -1120,6 +1153,9 @@ mem_write_lost:
     bl      send_status                 @ best effort: the host may be gone
     b       fault
 mem_write_abort:
+#if FPSUP_USB_CLOSED_ADMISSION
+    b       lifecycle_closed
+#endif
     mov     r0, #LOG_OUT                @ READY never reached the host
     LDA     r12, FN_ENDX
     blx     r12
@@ -1139,6 +1175,9 @@ mem_write_abort:
  * So it is set again the moment a transfer of ours completes.  Clobbers r0, r1. */
 .equ OUT_BUSY,    FW_WOUT_BUSY
 out_owned:
+#if FPSUP_USB_CLOSED_ADMISSION
+    b       lifecycle_refused
+#endif
     LDA     r0, OUT_BUSY
     mov     r1, #1
     str     r1, [r0]
@@ -1153,11 +1192,18 @@ out_owned:
  * dispatcher clears what it handles, so a completion can be consumed before or
  * instead of ours.  Measured: a MEMW frame sitting whole in our frame buffer
  * while Wait(OUT) ran out its 50 s; a MEMW data phase "never arriving" after
- * all four bytes did (camera, 2026-10-06, fault log).  The TRB cannot be
- * consumed by anybody, so it is what decides; Wait only sleeps between looks,
- * and a stale bit that wakes it early costs one more look, nothing else. */
+ * all four bytes did (camera, 2026-10-06, fault log). This legacy policy uses
+ * HWO to decide. It is NOT lifetime-safe: Wait can cancel/reset internally,
+ * and the table may now identify a replacement TRB. See FPL_USB_WAIT_STATUS.md.
+ * Preserved for the reviewed images; the closed-admission profile never enters
+ * this policy and does not claim to provide compatible active transport. */
 .equ WAIT_SLICE,  20
 wait_done:
+#if FPSUP_USB_CLOSED_ADMISSION
+    /* No admitted submission: neither dereference current TRBs nor invoke
+     * stock Wait (which can mutate transport before returning any status). */
+    b       lifecycle_refused
+#endif
     push    {r4, r5, r6, lr}
     mov     r4, r0
     mov     r5, r1
@@ -1440,8 +1486,27 @@ hold:
     blx     r12
     b       next_round
 
+#if FPSUP_USB_CLOSED_ADMISSION
+/* No ticket was issued, so STATE+08 is not authority to EndTransfer. Discard
+ * only our deferred intent; do NOT claim to cancel DMA or reclaim its buffer.
+ * Bounded per iteration, yielding via the existing 50 ms hold path. +38 is an
+ * owned diagnostic word, not a mutable reopen switch: "CLOS". */
+lifecycle_closed:
+    mov     r0, #0
+    str     r0, [r4, #8]
+    LDA     r0, 0x534F4C43
+    str     r0, [r4, #0x38]
+    b       hold
+lifecycle_refused:
+    mvn     r0, #0
+    bx      lr
+#endif
+
 /* --- arm EP 0x01 OUT for one command; returns the StartTransfer status ----- */
 arm_out:
+#if FPSUP_USB_CLOSED_ADMISSION
+    b       lifecycle_refused
+#endif
     push    {r4, r5, r6, r7, r12, lr}
 
     /* Only after a round that went wrong.
@@ -1580,6 +1645,9 @@ crc_block:
 
 /* --- arm EP 0x82 IN with r9 bytes at r8, no copy -------------------------- */
 arm_in_block:
+#if FPSUP_USB_CLOSED_ADMISSION
+    b       lifecycle_refused
+#endif
     push    {r4, r5, r6, r7, r12, lr}
     mov     r0, #TO_BUS
     add     r5, r8, r0
@@ -1599,6 +1667,9 @@ arm_in_block:
 
 /* --- arm EP 0x82 IN with the 64-byte reply frame -------------------------- */
 arm_in:
+#if FPSUP_USB_CLOSED_ADMISSION
+    b       lifecycle_refused
+#endif
     push    {r4, r5, r6, r7, r12, lr}
     LDA     r0, FRAMEBUF
     ldr     r6, [r0]

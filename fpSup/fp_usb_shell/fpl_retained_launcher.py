@@ -9,7 +9,7 @@ import fpl_retained_relocation as runtime
 SOURCE = Path(__file__).resolve().parent/'asm/fpl_retained_launch.S'
 
 
-def build(*, cancel=False, sleep_reason=0):
+def build(*, cancel=False, sleep_reason=0, admission_provider=None):
     artifact = runtime.template(cancel=cancel, sleep_reason=sleep_reason)
     template, ws, cs = artifact
     offsets = runtime.reference_offsets(ws, cs)
@@ -20,6 +20,11 @@ def build(*, cancel=False, sleep_reason=0):
         binary.write_bytes(template)
         defs = [f'RL_TEMPLATE="{binary}"', f'RL_OWNER_OFF={offsets[0]}',
                 f'RL_REFS_OFF={offsets[1]}']
+        if admission_provider is not None:
+            if (not isinstance(admission_provider, int) or admission_provider % 4 or
+                    not 0x40000000 <= admission_provider < 0x80000000):
+                raise ValueError('diagnostic provider must be an explicit aligned resident ARM entry')
+            defs.append(f'RL_ADMISSION_PROVIDER={admission_provider:#x}')
         body, syms = armasm.assemble(SOURCE, defs), armasm.symbols(SOURCE, defs)
     if (syms['entry'] != 0 or syms['image_end'] != len(body) or
             syms['embedded_image'] % 1024 or syms['result'] % 8 or

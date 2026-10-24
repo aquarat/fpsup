@@ -22,7 +22,9 @@
 
 #define SL_MAGIC        0x31425346u      /* "FSB1" */
 #define SL_HEADER_LEN   32u
-#if defined(SL_ALLSUPS)
+#if defined(SL_FPL_HEADLESS)
+#define SL_SVC_VERSION  2u    /* diagnostic: no cave or SL_SVC_AT binding */
+#elif defined(SL_ALLSUPS)
 #define SL_SVC_VERSION  4u    /* 4 (the loader with SYSTEM page 6): button */
 #else
 #define SL_SVC_VERSION  3u    /* 2: entry gets its own path in r2;
@@ -67,7 +69,7 @@ enum {
  * pointer is how it finds its books. */
 struct sl_svc {
     uint32_t version;                     /* SL_SVC_VERSION                    */
-    uint32_t boot_id;                     /* microseconds at load: unique per boot */
+    uint32_t boot_id;                     /* load timestamp; NOT reboot/ownership proof */
     /* Claim [addr, addr+len) of firmware memory.  `stock` is the firmware's own
      * bytes for that range, taken at build time from the reference image --
      * never read off the camera, because a warm restart keeps the last boot's

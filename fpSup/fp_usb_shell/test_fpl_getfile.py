@@ -114,6 +114,29 @@ class Host(unittest.TestCase):
             with self.assertRaises(ValueError):
                 gf.validate_request(path, 3)
 
+    def test_prefix_asks_exact_count_and_refuses_mismatch(self):
+        whole = gf.layout(CAPS, PUB, 3)
+        prefix = gf.layout(CAPS, PUB, 3, prefix=True)
+        self.assertEqual(whole.ask, 3 + gf.SLACK)
+        self.assertEqual(prefix.ask, 3)
+        self.assertEqual(prefix.buffer, whole.buffer)
+        with self.assertRaises(ValueError):
+            gf.layout(CAPS, PUB, 0, prefix=True)
+        fake = Fake()
+        fake.plan = prefix
+        with patch.object(gf, 'staging_lock', nullcontext):
+            self.assertEqual(gf.download('\\TEST.BIN', 3, fake, prefix=True), b'abc')
+        # The parameter block carries the exact prefix count, not count + slack.
+        self.assertEqual(struct.unpack_from('<I', fake.memory[prefix.param], 0x18)[0], 3)
+        for fault in ('tail', 'short', 'read'):
+            with self.subTest(fault=fault):
+                fake = Fake(fault)
+                fake.plan = prefix
+                with patch.object(gf, 'staging_lock', nullcontext), \
+                        self.assertRaises(RuntimeError):
+                    gf.download('\\TEST.BIN', 3, fake, prefix=True)
+                self.assertEqual(fake.slot, gf.ECHO_STOCK)
+
     def test_real_lock_excludes_second_holder(self):
         # A temporary lock path, never the live lock or any camera transport.
         import tempfile
@@ -139,6 +162,7 @@ class Host(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('--size', result.stdout)
+        self.assertIn('--prefix', result.stdout)
 
 
 # Independent literal call addresses; these are not read from the headers.

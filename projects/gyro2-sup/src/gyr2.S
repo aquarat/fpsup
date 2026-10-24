@@ -122,6 +122,9 @@
  * observers add theirs the same way).  The template then has a fixed place
  * for the block, sized for the take's frame rate.  Offline research
  * 2026-10-15 (scratchpad a4_observer.md, a4_headerlen.md, a4_fps.md). */
+#if defined(GYR2_FPL_OBSERVER)
+#include "profiles/fpl302_observer.inc.S"
+#else
 .equ F_SUBJECT,    0xC00577F0         /* () -> the Subject (built on first use) */
 .equ F_ATTACH,     0xC00D2958         /* (subject, obs); a full Subject asserts */
 .equ SUBJ_SLOTS,   9                  /* words at subject+0                     */
@@ -144,6 +147,7 @@
 .equ GTAG_FRAMES,  4                  /* a tag holds 4 frames' samples: a first
                                          frame's backfill and stalls catch up    */
 .equ HZ,           2500               /* samples a second, rounded up           */
+#endif
 
 /* P3: the take's sensor mode (fpSup gyro/gcsv_json.S, profilegen.S). */
 .equ SENSOR_MODE_FN, 0xC032C720       /* () -> the running mode, 0 = none      */
@@ -210,6 +214,7 @@
 .equ VARS_BYTES, 176
 
 /* ------------------------------------------------------------------ entry */
+#ifndef GYR2_FPL_OBSERVER
 /* r0 = block, r1 = service table.  Returns 0 = KEEP, 1 = RELEASE.
  * Claim, learn the layer below, get a veneer -- and only then write. */
 entry:
@@ -355,6 +360,7 @@ put_bl:
 .align 2
 accel_stock: .word 0xE3A02000         @ mov r2, #0, from the image
 vd_stock:   .word 0x341DF2CC          @ movt r4, #0xC31D (Thumb-2), from the image
+#endif
 vars:       .space VARS_BYTES
 
 /* ------------------------------------------------------------------ frame */
@@ -367,6 +373,13 @@ vars:       .space VARS_BYTES
  * the coprocessor's ring for the last few records not yet drained.  The
  * block is [the last block's end, this frame's mark), as much as the tag
  * holds.  Keeps r4-r11. */
+#ifdef GYR2_FPL_OBSERVER
+/* Offline callable seam only. No installer, capture, calibration or hook code.
+ * A caller-owned frame consumer is mandatory; no fp producer is substituted. */
+frame:
+    ldr     ip, =GYR2_FRAME_CALLBACK
+    bx      ip
+#else
 frame:
     push    {r4, r5, r6, r7, r8, r9, r10, r11, lr}
     sub     sp, sp, #(SNAP_BYTES + 4)   @ the snapshot; 8-aligned with the 9 words
@@ -572,6 +585,7 @@ frame:
 
 90: add     sp, sp, #(SNAP_BYTES + 4)
     pop     {r4, r5, r6, r7, r8, r9, r10, r11, pc}
+#endif
 
 /* take_start: the take's template is serialized (the mode-2 notify,
  * C0378F70, after C0378EC8 stored its length): find our tag in it once, so
@@ -606,6 +620,7 @@ take_start:
  * only from the level's hook, so the buffer has one writer and needs no lock
  * (an LDREX/STREX lock in the block's memory froze the boot, 2026-10-06).
  * r10 = vars.  Keeps r4-r11. */
+#ifndef GYR2_FPL_OBSERVER
 drain:
     push    {r4, r5, r6, r7, r8, r9, r11, lr}
     ldr     ip, =F_TICK
@@ -852,6 +867,7 @@ accel_hook:
     pop     {r0, r1}
     bx      ip                          @ the layer below replays it
 
+#endif
 /* tag_observer: vt+0xC of our observer, called as (obs, DataPool) on every
  * notify of the Subject: take starts, stills, every CinemaDNG frame.  Only
  * the CinemaDNG take start (mode 0, type 3) adds our tag; then the builder
@@ -960,6 +976,7 @@ udiv:
  * {pos u16 from r2, type 1, len 6, x, y, z}; skips older ones; leaves later
  * ones for the next block.  Returns r0 = count, r1 = the next byte.
  * r10 = vars. */
+#ifndef GYR2_FPL_OBSERVER
 put_events:
     push    {r4, r5, r6, r7, r8, r9, r11, lr}
     mov     r1, r0
@@ -1126,6 +1143,7 @@ mode_info:
     orr     r5, r5, r6, lsl #16
     str     r5, [r10, #V_BIN]
 9:  pop     {r4, r5, r6, pc}
+#endif
 
 /* rd16 / rd32: r0 = [r1 + r2], byte-wise little-endian.  Clobbers r3. */
 rd16:
@@ -1265,6 +1283,11 @@ find_gtag:
 /* Past the file: the loader zeroes block_size - file_len (build.py). */
 .align 3
 gbuf:
+#ifdef GYR2_FPL_OBSERVER
+/* Owned zero source for tag-copy; unlike the sup, the probe carries its zeros. */
+zbuf: .space GTAG_MAX
+#else
 .set ebuf, gbuf + GLOG_BYTES
 .set vbuf, ebuf + ELOG_BYTES
 .set zbuf, vbuf + VLOG_BYTES              /* GTAG_MAX zeros, never written */
+#endif

@@ -38,7 +38,8 @@ def staging_lock(*, permit_pending=False):
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         try:
             if not permit_pending and LOCK_PATH.with_suffix('.pending').exists():
-                raise RuntimeError('fp L handoff pending; inspect with fpl_swapworker.py reconcile before staging')
+                raise RuntimeError('fp L handoff pending; inspect with fpl_swapworker.py reconcile '
+                                   '(fpl_gtagpf.py --teardown for its observer marker) before staging')
             yield
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
@@ -64,10 +65,12 @@ class Layout:
     ask: int
 
 
-def layout(caps, publication, size):
+def layout(caps, publication, size, *, prefix=False, code_room=CODE_ROOM):
     if not caps or len(publication) != 3 or any(type(v) is not int for v in publication):
         raise ValueError('MEM1 and complete fp L publication required')
     pool, room, worker = publication
+    if type(code_room) is not int or not 0 < code_room <= 0x10000 or code_room % 0x400:
+        raise ValueError('code room must be 0x400-aligned and at most 0x10000')
     if (caps.get('pool'), caps.get('pool_size')) != (pool, room):
         raise ValueError('MCAPS does not match fp L publication')
     if (not 0x44000000 <= pool < 0x80000000 or pool % 4 or
@@ -77,12 +80,17 @@ def layout(caps, publication, size):
             pool <= worker < pool + room or not 4 <= caps.get('xfer', 0) <= 0xFFFFFF):
         raise ValueError('invalid worker publication or MEM1 bounds')
     code = pool + STAGING_OFFSET
-    param = code + CODE_ROOM
+    param = code + code_room
     fobj = param + PARAM_ROOM
     buf = fobj + FOBJ_ROOM
     if type(size) is not int or size < 0 or buf + size + SLACK > pool + room:
         raise ValueError('exact file size plus slack exceeds available staging')
-    return Layout(code, param, fobj, buf, size + SLACK)
+    # Whole-file mode asks for slack beyond the expected size so a longer file
+    # is detected and refused. Prefix mode asks for exactly `size` bytes and
+    # requires exactly that many back: it cannot detect the file's length.
+    if prefix and size == 0:
+        raise ValueError('prefix length must be positive')
+    return Layout(code, param, fobj, buf, size if prefix else size + SLACK)
 
 
 def parameters(plan, path):
@@ -134,12 +142,13 @@ def echo(io):
         raise RuntimeError(f'echo outcome uncertain: {reply!r}')
 
 
-def download(remote, size, io=None):
+def download(remote, size, io=None, *, prefix=False):
+    """Exact file of `size` bytes, or with prefix=True its first `size` bytes."""
     with staging_lock():
-        return _download_locked(remote, size, io)
+        return _download_locked(remote, size, io, prefix=prefix)
 
 
-def _download_locked(remote, size, io=None):
+def _download_locked(remote, size, io=None, *, prefix=False):
     """Internal: caller must hold staging_lock through all staging operations."""
     path = validate_request(remote, size)
     io = io or Backend()
@@ -149,7 +158,7 @@ def _download_locked(remote, size, io=None):
             not re.search(r'\brel version\s*=\s*3\.02\.0\.V90\b', version)):
         raise ValueError(f'expected firmware version 3.02, got {version!r}')
     publication = io.words(PUBLICATION, 3)
-    plan = layout(io.caps(), publication, size)
+    plan = layout(io.caps(), publication, size, prefix=prefix)
     if io.words(ECHO_SLOT) != [ECHO_STOCK]:
         raise RuntimeError('echo is not stock; cannot borrow it')
     code = assemble(HERE / 'asm/getfile.S',
@@ -183,7 +192,8 @@ def _download_locked(remote, size, io=None):
             (buf, ask, fobj, mode) != (plan.buffer, plan.ask, plan.fobj, 1)):
         raise RuntimeError('file read failed or parameter block changed')
     if actual != size:
-        raise RuntimeError(f'file length {actual}, expected {size}; refusing a prefix')
+        what = 'prefix read' if prefix else 'file length'
+        raise RuntimeError(f'{what} {actual}, expected {size}; refusing')
     data = io.read(plan.buffer, size)
     if len(data) != size:
         raise RuntimeError('short MEMR download')
@@ -196,11 +206,14 @@ def main(argv=None):
     parser.add_argument('local', type=Path, help='local output file (must not exist)')
     parser.add_argument('--size', type=lambda s: int(s, 0), required=True,
                         help='known exact file size; larger/shorter reads are rejected')
+    parser.add_argument('--prefix', action='store_true',
+                        help='download only the first --size bytes of a longer file '
+                             '(exactly that many must be read; file length is not checked)')
     args = parser.parse_args(argv)
     validate_request(args.remote, args.size)
     if args.local.exists() or not args.local.parent.is_dir():
         parser.error('output must be a new file in an existing directory')
-    data = download(args.remote, args.size)
+    data = download(args.remote, args.size, prefix=args.prefix)
     with args.local.open('xb') as output:
         output.write(data)
     print(f'{args.local}: {len(data)} bytes, SHA-256 {hashlib.sha256(data).hexdigest()}')

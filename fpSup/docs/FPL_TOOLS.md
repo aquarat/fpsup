@@ -36,6 +36,17 @@ python3 -B fpl_getfile.py '\AutoRun.txt' ./readback-AutoRun.txt --size 8116
 python3 -B fpl_putfile.py ./sample.bin '\FPLPROBE\UNIQUE.BIN' --size 65554
 ```
 
+`fpl_getfile.py` reads into the worker's 1 MiB staging pool, so a whole file
+must fit in it (about 1 MB less overhead). For a longer file, `--prefix` asks the
+camera for exactly `--size` bytes and refuses any other count. It cannot detect
+the file's real length. Live-used on 23 October for the first 0x20000 bytes of a
+CinemaDNG frame:
+
+```sh
+python3 -B fpl_getfile.py '\CINEMA\A001_001\A001_001_20261023_000001.DNG' \
+  ./frame1.prefix --size 0x20000 --prefix
+```
+
 For a reviewed, equal-size BIN replacement with unchanged AutoRun:
 
 ```sh
@@ -126,11 +137,14 @@ and 997 conditional records, with full readback, native completion and final
 PONG. It verifies exact firmware identity, reviewed resident worker bytes,
 structured liveness, allocation bounds and entry ABI before proceeding.
 
-The completed trial deliberately retains all native objects and storage, plus
-`~/.cache/fpsup/fpl-staging.pending`. The marker blocks staging operations, including another trial,
-while ownership remains unresolved. Worker-handoff
-`reconcile` rejects its distinct schema; it must not be cleared as if it were
-a completed handoff. There is no retry, resume, cancellation, join or free CLI.
+The completed trial deliberately retains all native objects and storage. It
+also wrote `~/.cache/fpsup/fpl-staging.pending`, which blocks every staging
+operation, including downloads and another trial. On 23 October that marker was
+deliberately cleared (and archived with the trial evidence) so downloads could
+resume. Clearing it freed nothing: the native objects and storage from that
+trial are still retained, and their addresses must not be reused.
+Worker-handoff `reconcile` still rejects that schema; it is not a completed
+handoff record. There is no retry, resume, cancellation, join or free CLI.
 Boot identity cannot be established from publication equality alone.
 
 The manifest and exact helper/readback artifacts are under private research
@@ -177,6 +191,45 @@ this still does not prove atomicity, freshness or no missed ring laps.
 New artifacts include UTC/monotonic host bounds around just the probe echo,
 excluding cache publication/restoration. Those are host request bounds, not
 camera sample timestamps; use monotonic bounds for elapsed time.
+
+## Whole-file chunked download and GTAG experiment observers
+
+`fpl_getrange.py` downloads a card file larger than the staging pool in
+0xC0000 chunks (open, discard index whole chunks, read one, close; a short
+final chunk gives the exact length). An 8.4 MB CinemaDNG frame takes ~2 s.
+`fpl_getfile.layout()` now takes an optional `code_room` (0x400-aligned,
+default unchanged) so a larger experiment payload can reserve more code
+staging; existing tools keep their exact offsets.
+
+`fpl_gtag560.py` (one-shot tag add, live 23 October) and `fpl_gtagpf.py`
+(persistent per-frame rewrite, live 24 October) drive the GTAG experiment
+observers in `asm/fpl_gtag560.S` and `asm/fpl_gtagpf.S`. Both borrow echo to
+publish caches and attach through the native Subject, press record once each
+way with no retries, and restore/verify stock state afterwards. The per-frame
+observer never detaches itself; the host clears its own Subject slot only
+after the owner is idle. While it may be attached, `fpl_gtagpf.py` holds the
+shared `~/.cache/fpsup/fpl-staging.pending` marker (schema
+`fpl-gtagpf-observer-v1`), which blocks every staging tool; any failure leaves
+it, and `--teardown` clears the observer's slot (owner idle only) and then the
+marker. Evidence directories:
+`~/.local/share/fpsup-research/fpl-live-2026-10-2{3,4}/gtag*/`. Tests:
+`projects/gyro2-sup/test_fpl_gtag560.py`, `test_fpl_gtagpf.py`.
+
+```sh
+python3 -B fpl_gtagpf.py --preflight --out EVIDENCE_DIR   # reads only
+python3 -B fpl_gtagpf.py --run --out EVIDENCE_DIR          # take + frame pull
+python3 -B fpl_gtagpf.py --teardown --out EVIDENCE_DIR     # recover a left observer
+python3 -B fpl_gtagpf.py --gyro --run --out EVIDENCE_DIR   # per-frame gyro records
+```
+
+`--gyro` builds the observer with `GYRO=1`, N=1584 (H `0x13C00`): each frame
+carries the gyro records drained at its notify through the shared
+`gyro/gyro_drain.S`. Preflight additionally requires the ring published as
+bound (`C31E23CC -> 2E006004`, `[P+60] = 2E00644C`) and a moving head. After the
+take it downloads every frame's header prefix (`frameNNN.prefix`), writes
+`gyro_records.csv` and `analysis.json` (continuity, losses, rate, lap suspects)
+and checks two whole frames' StripOffsets. `--seconds` sets the take length.
+Not yet run live.
 
 ## Transfer bounds
 

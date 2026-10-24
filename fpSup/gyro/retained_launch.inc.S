@@ -23,10 +23,16 @@
 .global entry, result, embedded_image, image_end
 entry:
 .Lentry:
+#ifdef RL_ADMISSION_PROVIDER
+    push {r11, ip}                    @ opt-in reservation pointer; default bytes unchanged
+#endif
     push {r4-r10, lr}
     mov r10, sp
     bic sp, sp, #7
     sub sp, sp, #16
+#ifdef RL_ADMISSION_PROVIDER
+    mov r11, #0
+#endif
     adr r8, .Lentry
     cmp r0, r8
     bne return
@@ -60,6 +66,11 @@ check_refs:
     bne invalid
     subs r2, r2, #1
     bne check_refs
+#ifdef RL_ADMISSION_PROVIDER
+    bl admission_claim
+    cmp r11, #0
+    beq return
+#endif
     mov r0, sp
     mov r1, #0
     mov r2, #0x10000
@@ -107,6 +118,12 @@ validate_descriptor:
     cmp r5, r9
     cmplo r8, r7
     blo invalid                       @ includes launcher/result/whole template
+#ifdef RL_ADMISSION_PROVIDER
+    add r0, r11, #64
+    cmp r5, r0
+    cmplo r11, r7
+    blo invalid                       @ provider reservation cannot alias new owner
+#endif
     mov r0, r5
     mov r1, #0
 zero_owner:
@@ -137,6 +154,18 @@ sentinels:
     mov r0, #5
     str r0, [r4]
     bl copy_result                    @ descriptor/intent retained before entry
+#ifdef RL_ADMISSION_PROVIDER
+    add r0, r5, #0x440
+    ldr r1, =0x5241444D                @ MADR: owned diagnostic identity
+    mov r2, #1
+    ldr r3, [r11, #8]
+    stm r0, {r1, r2}
+    str r11, [r0, #8]
+    str r3, [r0, #12]
+    dmb sy
+    mov r0, #2                       @ retained intent, not completed initialization
+    str r0, [r11, #12]
+#endif
     ldr ip, =RL_DCACHE
     blx ip
     ldr ip, =RL_ICACHE
@@ -149,17 +178,42 @@ invoke:
     mov r0, #6
     str r0, [r4]
     bl copy_result
+#ifdef RL_ADMISSION_PROVIDER
+    mov r0, #3                       @ entry returned, NOT task-start success
+    dmb sy
+    str r0, [r11, #12]
+#endif
     b return
 refused:
     mov r0, #3
     str r0, [r4]
+#ifdef RL_ADMISSION_PROVIDER
+    bl admission_result
+    mov r0, #4
+    dmb sy
+    str r0, [r11, #12]
+#endif
     b return
 invalid:
     mov r0, #4
     str r0, [r4]
+#ifdef RL_ADMISSION_PROVIDER
+    cmp r11, #0
+    beq return
+    bl admission_result
+    mov r0, #5
+    dmb sy
+    str r0, [r11, #12]
+#endif
 return:
     mov sp, r10
+#ifdef RL_ADMISSION_PROVIDER
+    pop {r4-r10, lr}
+    pop {r11, ip}
+    bx lr
+#else
     pop {r4-r10, pc}
+#endif
 
 copy_result:
     mov r0, r4
@@ -170,7 +224,14 @@ copy_result:
     subs r2, r2, #1
     bne 1b
     dmb sy
+#ifdef RL_ADMISSION_PROVIDER
+    b admission_result
+#else
     bx lr
+#endif
+#ifdef RL_ADMISSION_PROVIDER
+#include "retained_admission.inc.S"
+#endif
     .ltorg
     .balign 8
 result:

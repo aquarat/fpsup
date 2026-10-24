@@ -111,10 +111,20 @@ def splash_defines():
             f'SPLASH_HEIGHT_TEXT="{HEIGHT}"', 'SPLASH_OFFSET_TEXT="0"']
 
 
-def loader_bin(extra_cflags=(), splash=True, allsups=False, file_offset=None):
+def loader_bin(extra_cflags=(), splash=True, allsups=False, file_offset=None,
+               *, camera='fp-5.02'):
     """(LOADER.BIN bytes, info).  `splash`: carry the four-box completion.
     `allsups`: carry the built-in SYSTEM page 6 (allsups.c; its data is
     UI_DIR\\ALLSUPS_FILE, built by fpSup/uishare/tab/build_ft6.py --data)."""
+    if camera not in ('fp-5.02', 'fp-l-3.02'):
+        raise BuildError('unsupported v3 service profile')
+    if camera == 'fp-l-3.02':
+        if splash or allsups:
+            raise BuildError('fp L v3 core is diagnostic headless only')
+        # Keep conditional execution to single-instruction IT blocks. This is
+        # valid ARMv7 code and avoids multi-IT translation anomalies in the
+        # mixed native ARM/Thumb Cortex-A15 Unicorn fixture.
+        extra_cflags = [*extra_cflags, '-DSL_FPL_HEADLESS=1', '-mrestrict-it']
     with tempfile.TemporaryDirectory(prefix='slv3-') as t:
         text = compile_c(pathlib.Path(t), extra_cflags, allsups)
     src = HERE / 'sloader_entry.S'

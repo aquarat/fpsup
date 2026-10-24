@@ -198,14 +198,14 @@ M1 + M2 ordinary/v3 lifecycle ── Instant ── Fast ───────�
 accepted products + M4 catalogue ── M5/M6 combination tests ─── full matrix
 ```
 
-The DAG is about product acceptance: isolated codec, UI, parser and profile implementation can proceed before unrelated hardware gates. All live work must be serialized with the camera owner; none is authorized by a passing offline milestone.
+The DAG is about product acceptance: isolated codec, UI, parser and profile implementation can proceed before unrelated hardware gates. Live tests run when a milestone calls for them: one session on the camera at a time, never writing firmware, recording what was done and restoring stock state. A passing offline milestone is not itself hardware acceptance.
 
 ## 7. Parallel work and external actions
 
 | Workstream | Can proceed now offline | Needs external input / hardware |
 |---|---|---|
 | Build reproducibility | Exact Gyro2 source/hash checks, extractor/toolchain, fp v3 tests, portable input paths | Official firmware supplied separately; upstream clarification for missing Res-Custom release pins/license scope |
-| Shell/retained lifecycle | Ownership and failure tests; discovery/admission; ordinary-card regression fixes | Owner-coordinated idle power cycles, reconnect and recording coexistence; no operations on current retained state |
+| Shell/retained lifecycle | Ownership and failure tests; discovery/admission; ordinary-card regression fixes | Idle power cycles, reconnect and recording coexistence; no operations on current retained state |
 | Gyro | Gyro2 profile and decoder fixtures; shared conditional-capture tests; plugin format review | Rate/axes/scales, Vd/recording correlation, continuous takes and lens calibration |
 | UI | Profile adapters, ScreenFlip, catalogue target filtering | LCD/touch/Quick Set plus optional EVF/HDMI validation |
 | Recorder | Codec/writer/FCAP profile and emulation fixtures | Actual frames, media stress, failures, playback and durable close |

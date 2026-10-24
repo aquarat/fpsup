@@ -32,6 +32,9 @@ typedef uint8_t u8;
 
 /* --- firmware ------------------------------------------------------------ */
 #define FW(addr, type) ((type)(uintptr_t)(addr))
+#ifdef SL_FPL_HEADLESS
+#include "services_fpl_302.h"
+#else
 #define tick_us()        FW(0xC002B6E0, u32 (*)(void))()
 #define dcache()         FW(0xC000E91C, void (*)(void))()
 #define icache()         FW(0xC000EABC, void (*)(void))()
@@ -51,6 +54,7 @@ typedef uint8_t u8;
 #define dir_open(h, p)   FW(0xC0366990, u32 (*)(void *, const char *))(h, p)
 #define dir_next(h, e)   FW(0xC03669F8, u32 (*)(void *, void *))(h, e)
 #define dir_dtor(h)      FW(0xC0366940, void (*)(void *, u32))(h, 2)
+#endif
 
 #define DRIVE_SD     1u        /* the card; 5 would be an SSD                  */
 #define DIR_ENTRY    0x238u    /* name UTF-16 +0, size u64 +0x210, attr +0x218 */
@@ -282,11 +286,16 @@ static u32 svc_chain_next(const struct sl_svc *svc, u32 site, u32 thumb)
 static u32 svc_cave_alloc(const struct sl_svc *svc, u32 bytes)
 {
     (void)svc;
+#ifdef SL_FPL_HEADLESS
+    (void)bytes;
+    return 0;                         /* no fp L cave reservation exists */
+#else
     volatile u32 *bump = (volatile u32 *)(uintptr_t)CAVE_BUMP;
     u32 p = (*bump + 7) & ~7u, n = (bytes + 7) & ~7u;
     if (!n || p < CAVE_ARENA || p + n > CAVE_ARENA_END) return 0;
     *bump = p + n;
     return p;
+#endif
 }
 
 static void svc_publish(const struct sl_svc *svc) { (void)svc; publish(); }
@@ -612,8 +621,12 @@ static void write_log(struct state *st, const struct strings *str)
 /* --- the resident half --------------------------------------------------- */
 static u32 sl_load(struct state *st, const struct strings *str)
 {
+#ifndef SL_FPL_HEADLESS
     *(volatile u32 *)(uintptr_t)CAVE_BUMP = CAVE_ARENA;   /* every boot: stage2's rule */
     st->svc.version = SL_SVC_VERSION;
+#else
+    st->svc.version = SL_SVC_VERSION;  /* no v3 transient global service binding */
+#endif
     st->svc.boot_id = tick_us();
     st->svc.claim = svc_claim;
     st->svc.claim_res = svc_claim_res;
@@ -623,7 +636,9 @@ static u32 sl_load(struct state *st, const struct strings *str)
     st->svc.log = svc_log;
     st->svc.holder = svc_holder;
     st->svc.self = svc_self;
+#ifndef SL_FPL_HEADLESS
     st->svc.done_at_start = *(volatile u32 *)(uintptr_t)LOAD_DONE_US;
+#endif
 #ifdef SL_ALLSUPS
     st->svc.button = svc_button;
 #endif
@@ -651,20 +666,26 @@ static u32 sl_load(struct state *st, const struct strings *str)
     logrec(st, L_LISTED, n, 0, 0);
     /* The table where code that is not handed it can find it (SL_SVC_AT),
      * for exactly as long as entries run. */
+#ifndef SL_FPL_HEADLESS
     *(volatile u32 *)(uintptr_t)SL_SVC_AT = (u32)(uintptr_t)&st->svc;
+#endif
     publish();
     for (u32 i = 0; i < n; i++)
         load_one(st, s, str, &((struct cand *)(s + S_CANDS))[i]);
 #ifdef SL_ALLSUPS
     load_builtin(st, s, str);           /* last: it lists what the others did */
 #endif
+#ifndef SL_FPL_HEADLESS
     *(volatile u32 *)(uintptr_t)SL_SVC_AT = 0;
+#endif
     mem_free(st->heap, s);
 
     u32 kept = 0;
     for (u32 i = 0; i < st->nsups; i++) kept += st->sups[i].state == SL_KEEP;
     publish();
+#ifndef SL_FPL_HEADLESS
     *(volatile u32 *)(uintptr_t)LOAD_DONE_US = tick_us();
+#endif
     logrec(st, L_DONE, kept, st->nsups, 0);
     return kept;
 }

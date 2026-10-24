@@ -120,6 +120,7 @@ Names below are descriptive roles, not exported vendor symbols.
 | **Raw ring accessor (Thumb)** | **`C01EC8C0`** | **`C01E9140`** | `(out_pair[2], out_ring_pointer)`; described below; no lock or allocation |
 | Coprocessor pointer-publication callback (Thumb) | `C01EDE98` | `C01EA718` | r2=message pointer; publishes message+4/+8/+C, sets an event flag |
 | Embedded-image load-once routine (Thumb) | `C01EDF18` | `C01EA798` | installs callback, copies/starts image; **not a sampling API** |
+| TickTimer, microseconds (ARM) | `C002B6E0` | `C0029320` | `() -> us`; unique masked match; callees `C002B4E0/C002B440` ↔ `C0029120/C0029080` identical but for globals `C30781A4→C3076D98`, `C2EFABC8→C2F09408` (24 October). Used by the per-frame gyro block; not yet called live |
 | Thread create / attach / join | `C036E108 / E1B8 / E1F8` | `C036E320 / E3D0 / E410` | bounded bodies match; not required for a host-read snapshot |
 
 ### Accelerometer objects and layouts

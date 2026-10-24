@@ -70,6 +70,40 @@ def build(src=SRC):
     return sup, {'code': len(code), 'file': len(sup), 'block': block or len(sup)}
 
 
+def observer_probe(fp_image, fpl_image, *, sample_hz, tag_capacity, frame_callback):
+    """Raw callable fp L observer seam, never a loader sup or an installer.
+
+    All three experiment inputs are mandatory. Their values are not firmware
+    calibration/capacity claims. The owner must allocate and zero the returned
+    text/state, and own the callback; this API only builds offline bytes.
+    """
+    from audit_observer import audit
+    from armasm import symbols
+    if not 1 <= sample_hz <= 10000:
+        raise BuildError('sample_hz must be an explicit bounded experiment value')
+    if not 352 <= tag_capacity <= 4096:
+        raise BuildError('tag_capacity must be 352..4096; native free space remains unverified')
+    if not 0x40000000 <= frame_callback < 0x80000000 or frame_callback % 4:
+        raise BuildError('frame_callback must be an aligned owned ARM address')
+    evidence = audit(fp_image, fpl_image)
+    defines = ['GYR2_FPL_OBSERVER=1', f'GYR2_SAMPLE_HZ={sample_hz}',
+               f'GYR2_TAG_CAPACITY={tag_capacity}', f'GYR2_FRAME_CALLBACK={frame_callback}']
+    code = assemble(SRC, defines)
+    offsets = symbols(SRC, defines)
+    if 'entry' in offsets or 'drain' in offsets or 'mode_info' in offsets:
+        raise BuildError('observer-only probe unexpectedly includes product/capture code')
+    import hashlib
+    profile = HERE / 'src/profiles/fpl302_observer.inc.S'
+    evidence['probe'] = {
+        'sha256': hashlib.sha256(code).hexdigest(), 'bytes': len(code),
+        'sample_hz_experiment': sample_hz, 'tag_capacity_experiment': tag_capacity,
+        'frame_callback': hex(frame_callback), 'symbols': offsets,
+        'sources': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
+                    for p in (HERE / 'build.py', SRC, profile, HERE / 'audit_observer.py')},
+    }
+    return code, offsets, evidence
+
+
 def main():
     import argparse, hashlib, json
     ap = argparse.ArgumentParser()
