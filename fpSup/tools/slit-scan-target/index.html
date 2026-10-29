@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Slit-scan target · SIGMA fp L</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { font-family: system-ui, sans-serif; color: #172124; background: #edf0ee; }
+    body { margin: 0; }
+    main { min-height: 100svh; display: flex; flex-direction: column; padding: 16px 24px; gap: 12px; }
+    header, .toolbar, .readouts { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+    header { justify-content: space-between; }
+    h1 { margin: 0; font-size: 19px; letter-spacing: -.5px; }
+    h1 span { font-weight: 400; color: #5b6864; }
+    .badge { color: #285c4d; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+    #stage { flex: 1; min-height: 160px; display: grid; place-items: center; overflow: hidden; }
+    canvas { display: block; background: white; box-shadow: 0 0 0 1px #c9d1cd; }
+    .readouts { justify-content: space-between; font: 13px ui-monospace, monospace; font-variant-numeric: tabular-nums; min-height: 20px; }
+    #telemetry { white-space: pre; }
+    .panel { background: #fff; border: 1px solid #d6deda; border-radius: 12px; padding: 14px 18px; }
+    label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    select, button { font: inherit; font-size: 13px; border: 1px solid #bcc9c2; border-radius: 6px; padding: 8px 10px; background: #fff; color: #172124; }
+    button { cursor: pointer; }
+    button:hover { background: #edf5f0; }
+    button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid #237d60; outline-offset: 2px; }
+    #pause { min-width: 80px; background: #193f32; color: #fff; border-color: #193f32; }
+    input[type="range"] { width: clamp(100px, 14vw, 200px); accent-color: #193f32; }
+    output { min-width: 104px; font-variant-numeric: tabular-nums; }
+    p { font-size: 12px; line-height: 1.5; margin: 10px 0 0; color: #4e5e56; }
+    kbd { font: 11px ui-monospace, monospace; background: #edf0ee; border-radius: 3px; padding: 2px 4px; }
+    .hidden-controls main { padding: 0; gap: 0; height: 100svh; min-height: 0; background: #fff; }
+    .hidden-controls header, .hidden-controls .panel { display: none; }
+    .hidden-controls .readouts { padding: 5px 12px; font-size: 12px; }
+    .hidden-readouts .readouts { display: none; }
+    #reveal { display: none; position: fixed; right: 12px; top: 10px; opacity: .3; }
+    .hidden-controls #reveal { display: block; }
+    #reveal:hover, #reveal:focus { opacity: 1; }
+    @media (max-width: 700px) {
+      main { padding: 10px; gap: 8px; }
+      h1 { font-size: 16px; }
+      .panel { padding: 10px; }
+      .toolbar { gap: 8px; }
+      .badge { display: none; }
+      .readouts { font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Slit-scan target <span>/ SIGMA fp L</span></h1>
+    <span class="badge">Optical comparison · runs offline</span>
+  </header>
+  <div id="stage"><canvas id="target" aria-label="Animated rolling-shutter test target, initially a rotating three-spoke fan"></canvas></div>
+  <div class="readouts">
+    <span id="motion">Fan · 1.00 rev/s · forward</span>
+    <span id="telemetry">DRAW 000000 · T 0.000 s</span>
+    <span id="cadence">rAF cadence: measuring…</span>
+  </div>
+  <section class="panel" aria-label="Target controls">
+    <div class="toolbar">
+      <label>Target
+        <select id="mode">
+          <option value="fan">Rotating fan</option>
+          <option value="bars">Moving vertical bars</option>
+          <option value="flash">Full-field flash (flashing light)</option>
+        </select>
+      </label>
+      <label><span id="speed-label">Speed</span>
+        <input id="speed" aria-labelledby="speed-label" type="range" min="0.25" max="4" step="0.05" value="1">
+        <output id="speed-value" for="speed">1.00 rev/s</output>
+      </label>
+      <button id="pause" type="button" aria-pressed="false">Pause</button>
+      <button id="reverse" type="button" aria-pressed="false">Reverse: off</button>
+      <button id="fullscreen" type="button">Fullscreen</button>
+      <button id="hide" type="button">Hide controls · H</button>
+      <label><input id="readouts" type="checkbox" checked> Readouts</label>
+    </div>
+    <p><strong>Camera:</strong> fix the camera in place, fill the frame with the screen, use a short exposure and manual focus. Keep target speed and framing identical for baseline and slowed trials; actual optical scan times are still being measured. The fan’s holed spoke is the reference; bars travel in screen-widths/s.</p>
+    <p><strong>Display timing:</strong> browser/display refresh quantizes motion and flashing; this is not a precision LED or guaranteed refresh. The monitor can add refresh/banding artifacts. “DRAW” counts browser draws, not confirmed screen refreshes. Flash Hz means full black/white cycles (50% duty).</p>
+    <p><kbd>Space</kbd> pause · <kbd>R</kbd> reverse · <kbd>↑</kbd>/<kbd>↓</kbd> speed · <kbd>1</kbd> fan · <kbd>2</kbd> bars · select flash deliberately in Target · <kbd>F</kbd> fullscreen · <kbd>H</kbd> controls · <kbd>T</kbd> readouts · <kbd>Esc</kbd> exit fullscreen</p>
+    <p id="message" role="status" hidden></p>
+  </section>
+</main>
+<button id="reveal" type="button" aria-label="Show controls">Controls · H</button>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const canvas = $('target');
+  const ctx = canvas.getContext('2d');
+  const tau = Math.PI * 2;
+  const speeds = { fan: 1, bars: 0.5, flash: 3 };
+  let mode = 'fan', speed = speeds.fan, reversed = false, paused = false;
+  let phase = 0, elapsed = 0, last = performance.now(), draws = 0;
+  let width = 1600, height = 900, dpr = 1;
+  let sampleStart = last, sampleFrames = 0, nextLabel = 0;
+  let remoteVersion = -1, rafHz = 0;
+
+  function resize() {
+    const stage = $('stage');
+    // Reserve space for chrome, then fit a 16:9 target without CSS stretching.
+    const main = document.querySelector('main');
+    const css = getComputedStyle(main);
+    const siblings = [...main.children].filter(el => el !== stage && getComputedStyle(el).display !== 'none');
+    const reserved = siblings.reduce((sum, el) => sum + el.getBoundingClientRect().height, 0)
+      + parseFloat(css.paddingTop) + parseFloat(css.paddingBottom)
+      + (parseFloat(css.rowGap) || 0) * siblings.length;
+    const availableHeight = Math.max(160, window.innerHeight - reserved);
+    width = Math.max(1, Math.min(stage.clientWidth, availableHeight * 16 / 9));
+    height = width * 9 / 16;
+    dpr = window.devicePixelRatio || 1;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+  }
+
+  function advance(now) {
+    const delta = Math.max(0, now - last) / 1000;
+    last = now;
+    if (!paused) {
+      elapsed += delta;
+      phase = ((phase + delta * speed * (reversed ? -1 : 1)) % 1 + 1) % 1;
+    }
+  }
+
+  function labels() {
+    const unit = mode === 'fan' ? 'rev/s' : mode === 'bars' ? 'widths/s' : 'Hz';
+    const value = `${speed.toFixed(mode === 'flash' ? 0 : 2)} ${unit}`;
+    $('speed-value').textContent = value;
+    $('motion').textContent = `${mode === 'fan' ? 'Fan' : mode === 'bars' ? 'Bars' : 'Flash'} · ${value} · ${paused ? 'PAUSED' : reversed && mode !== 'flash' ? 'reverse' : 'forward'}`;
+    $('pause').textContent = paused ? 'Resume' : 'Pause';
+    $('pause').setAttribute('aria-pressed', String(paused));
+    $('reverse').textContent = `Reverse: ${reversed ? 'on' : 'off'}`;
+    $('reverse').setAttribute('aria-pressed', String(reversed));
+    $('reverse').disabled = mode === 'flash';
+  }
+
+  function setMode(value) {
+    advance(performance.now());
+    speeds[mode] = speed;
+    mode = value;
+    speed = speeds[mode];
+    phase = 0;
+    $('mode').value = mode;
+    Object.assign($('speed'), mode === 'flash'
+      ? { min: '1', max: '15', step: '1', value: String(speed) }
+      : { min: '0.25', max: '4', step: '0.05', value: String(speed) });
+    canvas.setAttribute('aria-label', `${mode} rolling-shutter test target`);
+    labels();
+  }
+
+  function changeSpeed() {
+    advance(performance.now());
+    speed = Number($('speed').value);
+    labels();
+  }
+
+  function togglePause() { advance(performance.now()); paused = !paused; labels(); }
+  function toggleReverse() {
+    if (mode === 'flash') return;
+    advance(performance.now()); reversed = !reversed; labels();
+  }
+  function toggleControls() { document.body.classList.toggle('hidden-controls'); resize(); }
+  function toggleReadouts() {
+    document.body.classList.toggle('hidden-readouts', !$('readouts').checked);
+    resize();
+  }
+  async function fullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+      else throw new Error('Fullscreen unavailable');
+    } catch (_) {
+      $('message').hidden = false;
+      $('message').textContent = 'Fullscreen unavailable here; maximize the browser window and press H to hide controls.';
+      resize();
+    }
+  }
+
+  function alignment() {
+    const cx = width / 2, cy = height / 2;
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = Math.max(1.5, height / 450);
+    // Static outer ticks and center crosshair remain independent of motion.
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const angle = i * tau / 4;
+      ctx.moveTo(cx + Math.cos(angle) * height * .455, cy + Math.sin(angle) * height * .455);
+      ctx.lineTo(cx + Math.cos(angle) * height * .485, cy + Math.sin(angle) * height * .485);
+    }
+    ctx.stroke();
+    const r = height * .026;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, tau); ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - r * .65, cy); ctx.lineTo(cx + r * .65, cy);
+    ctx.moveTo(cx, cy - r * .65); ctx.lineTo(cx, cy + r * .65);
+    ctx.stroke();
+  }
+
+  function draw(now) {
+    advance(now);
+    if (dpr !== (window.devicePixelRatio || 1)) resize();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = mode === 'flash' && phase >= .5 ? '#000' : '#fff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#000';
+    if (mode === 'fan') {
+      ctx.save(); ctx.translate(width / 2, height / 2); ctx.rotate(phase * tau);
+      const radius = height * .44;
+      for (let i = 0; i < 3; i++) {
+        const angle = i * tau / 3;
+        ctx.beginPath(); ctx.moveTo(0, 0);
+        ctx.arc(0, 0, radius, angle - .13, angle + .13);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(radius * .85, 0, radius * .045, 0, tau); ctx.fill();
+      ctx.restore();
+      alignment();
+    } else if (mode === 'bars') {
+      const spacing = width / 4, barWidth = spacing / 4;
+      const offset = phase * width % spacing;
+      for (let x = offset - spacing; x < width; x += spacing) ctx.fillRect(x, 0, barWidth, height);
+      // Small stationary crosshair; the rest of each bar spans the target height.
+      alignment();
+    }
+    draws++;
+    sampleFrames++;
+    if (now >= nextLabel) {
+      $('telemetry').textContent = `DRAW ${String(draws).padStart(6, '0')} · T ${elapsed.toFixed(3)} s`;
+      nextLabel = now + 100;
+    }
+    if (now - sampleStart >= 1000) {
+      const hz = sampleFrames * 1000 / (now - sampleStart);
+      rafHz = hz;
+      $('cadence').textContent = `rAF ≈ ${hz.toFixed(1)} Hz · not verified refresh`;
+      sampleStart = now; sampleFrames = 0;
+    }
+    requestAnimationFrame(draw);
+  }
+
+  async function remoteControl() {
+    // A downloaded file stays completely offline. HTTP serving is optional;
+    // animation phase is never derived from network timing.
+    if (!/^https?:$/.test(location.protocol)) return;
+    try {
+      const response = await fetch('/api/state', {cache: 'no-store'});
+      if (!response.ok) return; // also works with an ordinary static server
+      const desired = await response.json();
+      if (desired.version !== remoteVersion) {
+        if (!['fan', 'bars', 'flash'].includes(desired.mode)) throw Error('bad mode');
+        if (desired.mode !== mode) setMode(desired.mode);
+        advance(performance.now());
+        speed = desired.speed;
+        $('speed').value = String(speed);
+        paused = desired.paused;
+        reversed = desired.reversed;
+        document.body.classList.toggle('hidden-controls', desired.hiddenControls);
+        $('readouts').checked = desired.showReadouts;
+        toggleReadouts();
+        labels();
+        remoteVersion = desired.version;
+      }
+      await fetch('/api/client', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({version: remoteVersion, mode, speed, paused, reversed,
+          hiddenControls: document.body.classList.contains('hidden-controls'),
+          showReadouts: $('readouts').checked, visible: !document.hidden,
+          fullscreen: !!document.fullscreenElement, width, height, rafHz, draws, elapsed})});
+    } catch (_) {
+      // Loss of control connection never stops the local target or its controls.
+    }
+    setTimeout(remoteControl, 250);
+  }
+
+  remoteControl();
+
+  $('mode').addEventListener('change', () => setMode($('mode').value));
+  $('speed').addEventListener('input', changeSpeed);
+  $('pause').addEventListener('click', togglePause);
+  $('reverse').addEventListener('click', toggleReverse);
+  $('fullscreen').addEventListener('click', fullscreen);
+  $('hide').addEventListener('click', toggleControls);
+  $('reveal').addEventListener('click', toggleControls);
+  $('readouts').addEventListener('change', toggleReadouts);
+  window.addEventListener('resize', resize);
+  document.addEventListener('fullscreenchange', () => {
+    $('fullscreen').textContent = document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen';
+    resize();
+  });
+  document.addEventListener('visibilitychange', () => { sampleStart = performance.now(); sampleFrames = 0; });
+  document.addEventListener('keydown', event => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.target.matches('input, select, textarea, [contenteditable]')) return;
+    const key = event.key.toLowerCase();
+    if (key === ' ' && event.target.matches('button')) return;
+    if (![' ', 'r', 'f', 'h', 't', '1', '2', 'arrowup', 'arrowdown'].includes(key)) return;
+    event.preventDefault();
+    if (event.repeat && !key.startsWith('arrow')) return;
+    if (key === ' ') togglePause();
+    else if (key === 'r') toggleReverse();
+    else if (key === 'f') fullscreen();
+    else if (key === 'h') toggleControls();
+    else if (key === 't') { $('readouts').checked = !$('readouts').checked; toggleReadouts(); }
+    else if (key === '1' || key === '2') setMode(key === '1' ? 'fan' : 'bars');
+    else {
+      const slider = $('speed');
+      slider.value = String(Math.min(Number(slider.max), Math.max(Number(slider.min), speed + (key === 'arrowup' ? 1 : -1) * Number(slider.step))));
+      changeSpeed();
+    }
+  });
+  resize(); labels(); requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

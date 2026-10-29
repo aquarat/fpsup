@@ -172,17 +172,21 @@ if args.fpl_shell:
     # Explicit allowlist: future fp product switches must not silently become
     # supported here, even if they happen to have a harmless default today.
     allowed = {'--camera', '--fpl-shell', '--main', '--out', '--loader',
-               '--no-four-box-bar', '--no-fast-echo', '--no-ep-patches'}
+               '--no-four-box-bar', '--no-fast-echo', '--no-ep-patches', '--also-bin'}
     switches = {arg.split('=', 1)[0] for arg in sys.argv[1:] if arg.startswith('--')}
     required = {'--loader', '--no-four-box-bar', '--no-fast-echo', '--no-ep-patches'}
     if (camera.name != 'fp-l-3.02' or switches - allowed
             or not required <= switches or not args.main or not args.out):
         ap.error('--fpl-shell supports only --camera fp-l-3.02 --loader '
                  '--no-four-box-bar --no-fast-echo --no-ep-patches '
-                 '--main MAIN.bin --out NEW/AutoRun.txt')
+                 '--main MAIN.bin --out NEW/AutoRun.txt [--also-bin ADDR:STOCK-WORD]')
     from card_build import ordinary_card
     try:
-        text, art = ordinary_card(args.main)
+        stock_sections = []
+        for spec in args.also_bin:
+            address, filename = spec.split(':', 1)
+            stock_sections.append((int(address, 0), pathlib.Path(filename).read_bytes()))
+        text, art = ordinary_card(args.main, stock_sections=stock_sections)
         if args.out.exists() or (args.out.parent / 'fpSup.BIN').exists():
             raise ValueError('fp L output must be fresh (AutoRun and BIN must not exist)')
         if args.out.name == 'fpSup.BIN':

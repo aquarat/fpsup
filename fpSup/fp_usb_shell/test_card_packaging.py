@@ -68,7 +68,7 @@ class RestrictedCliTests(unittest.TestCase):
                    ('--four-box-bar',), ('--fast-echo',), ('--retain-ram',),
                    ('--no-shell',), ('--profile',), ('--payload', 'missing.S'),
                    ('--entry', 'spawn'), ('--payload-addr', '0xC072DE64'),
-                   ('--also', '0:missing.S'), ('--also-bin', '0:missing.bin'),
+                    ('--also', '0:missing.S'),
                    ('--boot-bin', 'missing.bin:0'), ('--late-boot-bin', 'missing.bin:0'),
                    ('--boot-call', '0:missing.S'), ('--vshl-entry', '0xC072DE64'),
                    ('--read-cap', '0xF000'), ('--splash-dir', 'UI'),
@@ -156,6 +156,27 @@ class OrdinaryCardTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('not the inspected', result.stderr)
             self.assertFalse(out.parent.exists())
+
+    def test_stock_word_cli_journals_and_rejects_nonstock_input(self):
+        from fpl_ui_restore import stock_sections
+        with tempfile.TemporaryDirectory() as td:
+            extra = []
+            for address, data in stock_sections(self.image):
+                path = Path(td)/f'{address:x}.bin'
+                path.write_bytes(data)
+                extra.extend(('--also-bin', f'{address:#x}:{path}'))
+            out = Path(td)/'journal'/ 'AutoRun.txt'
+            result = cli(out, extra)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(out.read_text(), self.text)
+            _, art = ordinary_card(IMAGE, stock_sections=stock_sections(self.image))
+            self.assertEqual((out.parent/'fpSup.BIN').read_bytes(), art['binfile'])
+            for bad in ('0:missing.bin', 'not-an-address:missing.bin', 'no-colon',
+                        f'0:{path}', f'{address:#x}:{path}'):
+                path.write_bytes(b'\0'*4)
+                target = Path(td)/'refused'/'AutoRun.txt'
+                self.assertNotEqual(cli(target, ['--also-bin', bad]).returncode, 0)
+                self.assertFalse(target.parent.exists())
 
 
 if __name__ == '__main__':

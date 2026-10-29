@@ -97,7 +97,7 @@ def build_vbin(sections, entries):
             + table + body, entry, sections)
 
 
-def artifact():
+def artifact(stock_sections=()):
     """Assemble the real chain and build the VBIN the loader reads."""
     defines = list(CAMERA.loader_defines())
     ld = defines + [f'LOADER_BASE={DIR_ENTRY:#010X}',
@@ -116,7 +116,7 @@ def artifact():
     # worker image (assert rather than assume).
     if w['spawn'] != 0:
         raise ValueError(f"spawn sits at +{w['spawn']:#x}, not the image start")
-    sections = [(0, stage2), (0, worker)]     # both run where they land
+    sections = [(0, stage2), (0, worker), *stock_sections]  # runtime hooks are journaled first
     binfile, entry, _ = build_vbin(sections, [(1, w['spawn'])])
     if len(binfile) > READ_CAP:
         raise ValueError('binary exceeds the ordinary loader read capacity')
@@ -149,10 +149,19 @@ DIAG_POOL = 0x4533AEC0
 DIAG_SLEEP_MS = 90000               # the host window while the script waits
 
 
-def card(image, diag=False, *, trial=True):
+def card(image, diag=False, *, trial=True, stock_sections=()):
     """(AutoRun lines, manifest) for the bring-up trial (diag: + NOPTP,
     a USB wait window, and state dumps that localize a silent worker)."""
-    art = artifact()
+    seen = set()
+    for address, data in stock_sections:
+        if (address & 3 or len(data) != 4 or address < BASE or
+                address+4 > BASE+len(image) or address in seen or
+                data != image[address-BASE:address-BASE+4]):
+            raise ValueError('fp L runtime hook declarations must be unique aligned stock firmware words')
+        if DIR_ENTRY <= address < DIR_ENTRY+RESTORE_LEN or address in (ECHO_SLOT, IFACE, NOPTP1, NOPTP2):
+            raise ValueError('runtime hook declaration overlaps shell bootstrap')
+        seen.add(address)
+    art = artifact(stock_sections)
     stock = image[DIR_ENTRY - BASE:DIR_ENTRY - BASE + RESTORE_LEN]
     iface_stock = struct.unpack_from('<I', image, IFACE - BASE)[0]
     if iface_stock != IFACE_STOCK:
@@ -258,15 +267,16 @@ def card(image, diag=False, *, trial=True):
     return lines, manifest, art
 
 
-def ordinary_card(main):
+def ordinary_card(main, *, stock_sections=()):
     """Offline-tested headless shell: NOPTP on, no evidence files or wait window.
 
-    Not Fast, UI or arbitrary product packaging. The loader/worker remain
+    Optional stock-word sections reserve runtime hook restoration. Not Fast,
+    UI installation or arbitrary product packaging. The loader/worker remain
     byte-identical to the diagnostic trial; only the AutoRun presentation and
     evidence commands differ. Firmware patches retain the trial's lifetime.
     """
     image = CAMERA.verify_main(main)
-    lines, _, art = card(image, diag=True, trial=False)
+    lines, _, art = card(image, diag=True, trial=False, stock_sections=stock_sections)
     commands = [line for line in lines if not line.startswith('#')]
     return '\n'.join(commands) + '\n', art
 

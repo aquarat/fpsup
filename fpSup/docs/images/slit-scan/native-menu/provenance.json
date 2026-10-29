@@ -1,0 +1,46 @@
+{
+  "camera": "SIGMA fp L 3.02",
+  "date": "2026-10-26",
+  "scope": "Native selection/display only; no timing or recorder backend attached",
+  "processing": "Removed JPEG APP1 (EXIF) and APP3 metadata segments without recompression; decoded pixels verified identical. Original camera files are preserved externally. Command logs and card directory listings are not published.",
+  "build": {
+    "runtime_bytes": 12656,
+    "runtime_sha256": "f7b6387714467ad7292dcdbdb797cb22820ab1d94ba319140344f77116459666",
+    "fpui_bytes": 30848,
+    "fpui_sha256": "97c89cce287d4244a392039dbb378720818f87d8b06a34656b45c5d449e70b07",
+    "page_bytes": 181932,
+    "owned_sha256": "556916bfc41fb99d8437974c4d252d8e7da46d9184a4808bd79e47ee8102cd6a"
+  },
+  "images": {
+    "off.jpg": {
+      "display": "Off",
+      "source_sha256": "3a5c3c48d74d7f3c7352cd974c135b0bc858c34f68e8b68343c44b1adef2dbaa",
+      "bytes": 126300,
+      "sha256": "ce35b25e97c25bc301b13791b5d5ddfc55d23a7fcb2e29060f3b2b8f344360f5"
+    },
+    "4fps.jpg": {
+      "display": "4 fps",
+      "source_sha256": "5a437cd94bf8e9c59af15050d78eb89b4b8cb870a19152b9079c471240f23a5b",
+      "bytes": 127239,
+      "sha256": "d2fa65111e4f19e7df83815591fe5be1537d6f577c05348c856c15769318eee8"
+    },
+    "6fps.jpg": {
+      "display": "6 fps",
+      "source_sha256": "960a833e6d2655ff103956b01caaa90ef449862e33982685f0e79d2fa8beefb3",
+      "bytes": 127433,
+      "sha256": "46ea98ec8ae96560f138e3ee4fc7b58f9398cda4ee75a95ca0d48c1f277499ad"
+    },
+    "8fps.jpg": {
+      "display": "8 fps",
+      "source_sha256": "6f7999a87549a3bee87d5ab395dea262243290ef115b9cce4457f1d49d88444d",
+      "bytes": 127557,
+      "sha256": "7b91a8368b9269dd956dc6d8edbab8883b60062e4e8ac79f25ca3ee9eb8afe29"
+    },
+    "12fps.jpg": {
+      "display": "12 fps",
+      "source_sha256": "a9973025823342bdf829a6bfc46825df33b3c2af80c4ab7d5bf8c6c07d35314b",
+      "bytes": 128025,
+      "sha256": "b32920a5f44d74f16f77167aaf91ecd79f14090d5ce0260053a7c3c999a61f16"
+    }
+  }
+}

@@ -9,7 +9,11 @@
 #define ENTRY_BYTES    44u
 #define ENTRY_NAME     0x04u
 #define ENTRY_OFFSET   0x08u
+#if defined(UIA_FPL_302)
+#define NBU_BASE       0xC18D01A0u
+#else
 #define NBU_BASE       0xC18C0460u
+#endif
 #define MAX_ENTRIES    512u
 
 #define OP_PAGE        1u
@@ -86,9 +90,13 @@ struct qs_opt { uint32_t table, k, ids[4], enum_value, flags, pack, pack_len, n;
 #define QS_ENUM_TAKEN 5u
 #define QS_TABLE 6u
 static uintptr_t qs_svc(void) {                 /* sloader.h SL_SVC_AT, as ui_pool.c reads it */
+#if defined(UIA_FPL_302)
+    return 0;                                  /* fp cave belongs to IMU on fp L */
+#else
     uintptr_t svc = peek(0xC072F6FCu);
     if (!svc || (svc & 3u) || peek(svc) < 3u || peek(svc + 40u) != peek(0xC072F6F8u)) return 0;
     return svc;
+#endif
 }
 #if defined(UIA_HOST_TEST)
 /* The layers are ARM code; a host fixture stands in for them (0: QS_OPTION fails). */
@@ -481,6 +489,11 @@ uint32_t uia_apply(uintptr_t b, uint32_t bytes, struct uia_outcome *out) {
         uint32_t args[MAX_ARGS];
         out->op = index;
         if (n > nw - k - 1u) return out->result = UIA_BLOCK;
+#if defined(UIA_FPL_302)
+        /* This port admits additive pages only. File hooks, QS and arbitrary
+         * STRBASE destinations need their own reviewed fp L bindings. */
+        if (code < OP_PAGE || code > OP_DONE) return out->result = UIA_OP;
+#endif
         for (i = 0; i < n && i < MAX_ARGS; ++i) args[i] = le(a + 4u * i);
         if (skip) { skip--; k += 1u + n; continue; }
         if (code == OP_PAGE) {

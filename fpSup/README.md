@@ -77,6 +77,20 @@ identically — see [`releases/README.md`](releases/README.md) and
 
 Each page says what has been proven, what is being worked on, and what is open.
 
+**fp L 3.02 development:** [Slit-scan / High Jello](docs/FPL_SLIT_SCAN.md) now
+has measured optical slowdown, example frame grabs, and a live-tested USB
+capture workflow. [Cave-free UI string hooks](docs/FPL_UI_HOOK.md) have passed
+finite on-camera installation/restoration tests with two nested layers.
+The additive native menu now passes on-camera selection, repeated keys,
+wraparound and MENU exit/reentry. Standalone timing/recording integration,
+boot installation and repeated power-switch acceptance remain unfinished. This is
+separate from the fp 5.02 releases listed above.
+
+[Auto ETTR / timelapse deflicker](docs/FPL_ETTR.md) has an offline RAW-metering
+and exposure-planning implementation, JSON/XMP sidecars, and 26 passing
+behavioral tests. On-camera metering, controls and capture integration are
+still in development.
+
 | # | Project | What it is | Status |
 |---|---|---|---|
 | 1 | [**usb shell sup**](projects/usb-shell-sup.md) | USB firmware research and data transport | **released** — v3.2.0. The channel is built on the camera's own PTP gadget, so recording survives it |

@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-26",
+  "processing": "rawpy half-size camera WB, independent auto brightness; identical crop and resize; no geometric correction",
+  "frames": [
+    {
+      "frame": "frame1.DNG",
+      "sha256": "2202f405469946e4f20f38efe54c324b793f636c8477065a2f919681cc9aa3ca",
+      "crop_half_resolution": [
+        370,
+        200,
+        1330,
+        750
+      ]
+    },
+    {
+      "frame": "frame60.DNG",
+      "sha256": "6a37b7ebf9b7d215c079dcd49c53feb5bba02591675ffc64772e0ce0920f28ed",
+      "crop_half_resolution": [
+        370,
+        200,
+        1330,
+        750
+      ]
+    }
+  ]
+}

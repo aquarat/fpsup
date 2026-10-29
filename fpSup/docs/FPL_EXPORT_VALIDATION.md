@@ -1,4 +1,71 @@
-# fp L development export validation — 2026-10-23
+# fp L development export validation
+
+## Slit-scan/native menu and offline ETTR export — 2026-10-29
+
+Baseline: published feature tip `582b7f61a6c2cd8b7f3025ef81a59c9ff8f91a9f`.
+Tests ran in the sanitized export tree with external official fp 5.02 and
+fp L 3.02 MAIN images, an ARM compiler on PATH, and Python dependencies
+Unicorn, Capstone, NumPy, rawpy, Pillow and tifffile.
+
+| Suite | Result |
+|---|---|
+| Slit-scan capture/Vd, UI/CPU/guard/resident/restore/draw/capture, card packaging, fp L shell card and shared boot-chain/loader-hook/splash | **93 passed** |
+| Menu/controller/native action handlers/page adapter/runtime | **25 passed** |
+| Offline ETTR/deflicker behavioral suite | **26 passed** |
+| Optical scan measurement | **2 passed** |
+| Default-fp shared UI applier, composition and mutations | **30 passed** |
+
+**176 tests passed, no skips or expected failures in these runs.** The ETTR
+static firmware audit also verified eight command bindings and rejected all
+seven negative cases. This targeted validation does not supersede the older
+unrelated failures recorded below or establish hardware release acceptance.
+
+Reproduce after setting `FP_MAIN`, `FPL_MAIN`, `FPSUP_FP_MAIN` and
+`FPSUP_FPL_MAIN` to the external official images:
+
+```sh
+# fpSup/fp_usb_shell
+python3 -B -m unittest test_fpl_slit_scan test_fpl_vd_probe test_fpl_ui test_fpl_ui_cpu test_fpl_ui_guard test_fpl_ui_resident test_fpl_ui_restore test_fpl_ui_draw test_fpl_ui_capture test_card_packaging test_fpl_shell_card test_boot_chain test_loader_hook test_splash
+# fpSup/slit_scan
+python3 -B -m unittest test_menu test_controller test_native_actions test_adapter test_runtime
+# Repository root
+python3 -B -m unittest fpSup.ettr.test_core
+python3 -B -m fpSup.ettr.audit_firmware --main "$FPL_MAIN" --self-test
+# fpSup/tools
+python3 -B -m unittest test_fpl_scan_measure
+```
+
+The inherited default-fp UI harness initially errored because it hard-codes
+`out/seg0_c0000000.bin` and does not consume `FPSUP_FP_MAIN`. Its pinned hash
+matches the official fp MAIN. All 30 tests then passed with only its input
+paths redirected in memory, preserving the image hash and all assertions:
+
+```sh
+# fpSup/uishare
+python3 -B - <<'PY'
+import os, pathlib, unittest
+import test_ui_apply as test
+import build_fpui
+test.SEG0 = build_fpui.P.SEG0 = pathlib.Path(os.environ['FP_MAIN'])
+result = unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromModule(test))
+raise SystemExit(not result.wasSuccessful())
+PY
+```
+
+Publication review covers complete outgoing blobs and commit metadata. Personal
+paths, LAN addresses and operational directory listings are omitted. Five menu
+JPEGs have EXIF/vendor metadata removed without recompression; their decoded
+pixels match the originals. The optical comparison has no EXIF. Image hashes
+and processing are recorded in adjacent provenance JSON. Original camera files,
+firmware inputs, payload binaries and detailed trial logs remain external.
+
+The staged-content firmware/decompiler guard passed against each official MAIN
+with NumPy available. Its optional exact Ghidra-line comparison had no decompiler
+export; text heuristics ran. Identifier/credential and private-commit-reference
+scans found no confirmed outgoing leak. This review covers this export delta,
+not a new audit of inherited upstream history.
+
+## Initial export — 2026-10-23
 
 Baseline: public upstream `e79e3f1ff4622bce0b8a4cee9d322f184d7f6696`.
 All results below are offline checks of the exported source. No camera operation,

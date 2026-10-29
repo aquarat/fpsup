@@ -4,13 +4,35 @@ This is an experimental shared-code port, not a released fp L product card.
 The downloadable fp products still target firmware 5.02. Firmware images and
 raw camera observations are not included.
 
+## Latest development: slit-scan and offline ETTR
+
+- **USB-host slit-scan capture is live-tested:** 4/6/8/12 fps, short-exposure
+  compensation, fixed ISO, single UHD RAW-frame and DNG-sequence export,
+  interruption restoration and hash-checked resume. Optical moving-bar evidence
+  confirms scan slowdown. [Capture guide](../tools/slit-scan-camera/README.md)
+  and [results with example images](FPL_SLIT_SCAN.md).
+- **Native menu selection is live-tested:** Off/4/6/8/12 fps, repeated
+  Left/Right/OK, both wrap directions and MENU exit/reentry. The temporary
+  RAM-only controller does not yet drive recording. Standalone timing/recording,
+  boot installation, repeated physical power-switch and long-duration acceptance
+  remain unfinished. [UI hooks and lifecycle](FPL_UI_HOOK.md).
+- **Auto ETTR/deflicker is offline groundwork:** RAW metering, bounded exposure
+  planning, DNG analysis and JSON/XMP sidecars. Native RAW ownership, calibration,
+  settling, controls and still/interval capture integration remain unfinished.
+  [ETTR guide and firmware audit](FPL_ETTR.md).
+
+Six illustrative JPEGs are included; camera metadata is removed from the native
+menu screenshots. Raw captures, operational manifests and firmware stay external.
+
 ## Architecture and current evidence
 
 - One loader, stage2, worker and container implementation, with explicit
   firmware profiles. Default fp bindings retain their established behavior.
 - The restricted ordinary headless shell builder uses
   `--camera fp-l-3.02 --fpl-shell`. Fast, UI and arbitrary product combinations
-  are not admitted. The shorter ordinary AutoRun is offline-tested only.
+   are not admitted. Optional unique stock-word sections reserve shared-loader
+   restoration for runtime hooks; they do not install a UI. The shorter ordinary
+   AutoRun is offline-tested only.
 - Historical fp L hardware trials verified shell execution, bidirectional RAM
   transfers, card upload/download readbacks and the reviewed same-size worker
   handoff. Unattended reboot recovery and arbitrary worker replacement remain
