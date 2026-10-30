@@ -37,9 +37,12 @@ static uint32_t fpl_sites_stock(void) {
 
 /* One shared object in both lists; exact code and six unique original words.
  * No registration, journal extension, flash write, or fp cave access. */
-static uint32_t fpl_journal(void) {
+static uint32_t fpl_journal_for(uint32_t draw) {
     if (FPL_READ(FPL_MANAGER) != 0xC0726CECu) return 0;
-    uint32_t found = 0, coverage = 0;
+    uint32_t found = 0, coverage = 0, drew = 0;
+#ifdef FPL_SLIT_RECORDING
+    uint32_t vd = 0;
+#endif
     const uint32_t *code = fpl_restore_image();
     for (uint32_t i = 0; i < 10; ++i) {
         uint32_t obj = FPL_READ(FPL_MANAGER+12+4*i), both = 0;
@@ -61,8 +64,17 @@ static uint32_t fpl_journal(void) {
             if (!a) { terminated = 1; break; }
             n = FPL_READ(p+4);
             if (j == 64 || (a & 3u) || (n & 3u) || !n || n > 4096 ||
-                a < 0xC0000000u || a >= 0xC3000000u || n > 0xC3000000u-a ||
-                p-start > 16384u-8u-n || !fpl_heap(p, 8+n)) return 0;
+                !((a >= 0xC0000000u && a < 0xC3000000u && n <= 0xC3000000u-a) ||
+                  (a == 0xC38D37CCu && n == 4 && FPL_READ(p+8) == 0xC2E55A70u)
+#ifdef FPL_SLIT_RECORDING
+                  || (a == 0xC31D6DD8u && n == 4 && FPL_READ(p+8) == 0)
+#endif
+                  ) ||
+                 p-start > 16384u-8u-n || !fpl_heap(p, 8+n)) return 0;
+            if (a == 0xC38D37CCu && ++drew != 1) return 0;
+#ifdef FPL_SLIT_RECORDING
+            if (a == 0xC31D6DD8u && ++vd != 1) return 0;
+#endif
             for (uint32_t k = 0; k < 6; ++k) {
                 uint32_t at = fpl_site(k);
                 if (at >= a && at-a < n) {
@@ -74,8 +86,13 @@ static uint32_t fpl_journal(void) {
         }
         if (!terminated) return 0;
     }
-    return found == 1 && coverage == 63;
+    return found == 1 && coverage == 63 && (!draw || drew == 1)
+#ifdef FPL_SLIT_RECORDING
+           && vd == 1
+#endif
+           ;
 }
+static uint32_t fpl_journal(void) { return fpl_journal_for(0); }
 
 static uintptr_t uis_reader(void) {
     uint32_t app = FPL_READ(0xC37B6B10u);

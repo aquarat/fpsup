@@ -4,8 +4,17 @@
 camera with both one and two shared string layers.** No fp cave was used.
 The follow-up deployed six-word shared-loader journaling and exercised the
 resident hooks through a native menu redraw. A native slit-scan row has also
-passed repeated selection and wraparound on the camera; recording integration and boot/power-off acceptance
-remain unfinished (follow-up below).
+passed repeated selection and wraparound on the camera. At that earlier stage,
+recording integration and boot/power-off acceptance were unfinished; the
+30-October follow-up below supersedes its implementation status.
+
+**30 October follow-up:** [ordinary native-menu boot](FPL_STANDALONE_BOOT.md)
+adds the drawing vtable as a seventh journal word; [resident recording](FPL_RESIDENT_RECORDING.md)
+adds the early-Vd slot as the eighth. Two debug-card software boots and recording
+at 4/6/8/12 fps passed on UHD/8-bit/24. The later
+[observation stage](FPL_RESIDENT_OBSERVATION.md) hit a live active-take size-change
+hang. Physical recovery/restoration and physical-power acceptance remain pending.
+Earlier installation/restoration status below is historical.
 
 ## Implementation
 

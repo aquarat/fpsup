@@ -166,6 +166,10 @@ ap.add_argument('--loader-hook-banner-at', type=int, default=3_000_000,
                 help='with --loader-hook: draw the banner no earlier than this '
                      'many microseconds after power-on (default 3 s; drawn at '
                      '1.35 s it is wiped by the UI coming up)')
+ap.add_argument('--fpl-ui-boot', action='store_true',
+                help='experimental fp L ordinary native UI boot entry (no Fast)')
+ap.add_argument('--fpl-slit-recording', action='store_true',
+                help='with --fpl-ui-boot: narrow resident timing shutdown cleanup')
 args = ap.parse_args()
 camera = get_camera(args.camera)
 if args.fpl_shell:
@@ -173,6 +177,8 @@ if args.fpl_shell:
     # supported here, even if they happen to have a harmless default today.
     allowed = {'--camera', '--fpl-shell', '--main', '--out', '--loader',
                '--no-four-box-bar', '--no-fast-echo', '--no-ep-patches', '--also-bin'}
+    if args.fpl_ui_boot:
+        allowed |= {'--fpl-ui-boot', '--boot-bin', '--no-shell', '--fpl-slit-recording'}
     switches = {arg.split('=', 1)[0] for arg in sys.argv[1:] if arg.startswith('--')}
     required = {'--loader', '--no-four-box-bar', '--no-fast-echo', '--no-ep-patches'}
     if (camera.name != 'fp-l-3.02' or switches - allowed
@@ -186,7 +192,13 @@ if args.fpl_shell:
         for spec in args.also_bin:
             address, filename = spec.split(':', 1)
             stock_sections.append((int(address, 0), pathlib.Path(filename).read_bytes()))
-        text, art = ordinary_card(args.main, stock_sections=stock_sections)
+        boot_bins = []
+        for spec in args.boot_bin:
+            filename, offset = spec.rsplit(':', 1)
+            boot_bins.append((pathlib.Path(filename).read_bytes(), int(offset, 0)))
+        text, art = ordinary_card(args.main, stock_sections=stock_sections,
+                                 boot_bins=boot_bins, shell=not args.no_shell,
+                                 ui_boot=args.fpl_ui_boot, slit_recording=args.fpl_slit_recording)
         if args.out.exists() or (args.out.parent / 'fpSup.BIN').exists():
             raise ValueError('fp L output must be fresh (AutoRun and BIN must not exist)')
         if args.out.name == 'fpSup.BIN':
@@ -196,8 +208,11 @@ if args.fpl_shell:
         (args.out.parent / 'fpSup.BIN').write_bytes(art['binfile'])
     except (OSError, ValueError) as error:
         ap.error(str(error))
-    print(f'fp L ordinary headless shell: {args.out}; entry 0x{art["entry"]:08X}')
+    kind = 'native UI' if args.fpl_ui_boot else 'headless shell'
+    print(f'fp L ordinary {kind}: {args.out}; entry 0x{art["entry"]:08X}')
     sys.exit(0)
+if args.fpl_ui_boot or args.fpl_slit_recording:
+    ap.error('--fpl-ui-boot requires the explicit --fpl-shell profile')
 if args.main:
     ap.error('--main is only supported with --fpl-shell')
 try:

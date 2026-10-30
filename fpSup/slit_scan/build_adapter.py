@@ -27,12 +27,14 @@ def embedded(name, code, pointer=False):
     return f'static __attribute__((naked,noinline)) {signature} {{ __asm__("{prefix}.word {words}"); }}\n'
 
 
-def build(provider=None, *, runtime=False):
+def build(provider=None, *, runtime=False, boot=False, recording=False):
     layer_source = SHARED/'ui_strings.S'
     layer = armasm.assemble(layer_source)
     symbols = armasm.symbols(layer_source)
     guard = armasm.assemble(HERE.parent/'fp_usb_shell/asm/fpl_ui_guard.S', ['RUNTIME_ARGS=1'])
-    restore = fpl_ui_restore.restore_code()
+    if recording and not (runtime and boot):
+        raise ValueError('recording requires the ordinary boot owner')
+    restore = fpl_ui_restore.restore_code(slit=recording)
     if len(layer) > 0x800:
         raise ValueError('layer exceeds guarded entry reservation')
     with tempfile.TemporaryDirectory(prefix='slit-adapter-') as tmp:
@@ -44,6 +46,7 @@ def build(provider=None, *, runtime=False):
         for name in ('ui_pool.h', 'ui_apply.h', 'ui_apply.c'):
             (tree/name).write_text(public.sub(r'static \1', (SHARED/name).read_text()))
         source = '#include <stdint.h>\n#define UIA_FPL_302 1\n'
+        if recording: source += '#define FPL_SLIT_RECORDING 1\n'
         for name, value in dict(FPL_LAYER_BYTES=len(layer), FPL_RESTORE_BYTES=len(restore),
                                 FPL_RESOLVE=symbols['resolve'], FPL_OWNS=symbols['owns'],
                                 FPL_REMAIN=symbols['remain']).items():
@@ -51,6 +54,14 @@ def build(provider=None, *, runtime=False):
         source += embedded('fpl_layer_image', layer, True)
         source += embedded('fpl_restore_image', restore, True)
         source += embedded('fpl_guard', guard)
+        if recording:
+            tag_source = HERE.parent/'fp_usb_shell/asm/fpl_gtagpf.S'
+            tag_defs = ['SLIT=1', 'PARAM=0', 'SRC=0', 'N=64']
+            tag_code = armasm.assemble(tag_source, tag_defs)
+            tag_symbols = armasm.symbols(tag_source, tag_defs)
+            source += embedded('fpl_tag_image', tag_code, True)
+            for name in ('observer', 'ret0'):
+                source += f'#define FPL_TAG_{name.upper()} {tag_symbols[name]}u\n'
         source += provider if provider is not None else (HERE/'fpl_pool.c').read_text()
         source += '\n#include "ui_apply.c"\n'
         if runtime:
@@ -61,7 +72,13 @@ def build(provider=None, *, runtime=False):
                 controller = controller.replace(signature, 'static '+signature)
                 header = (tree/'controller.h').read_text().replace(signature, 'static '+signature)
                 (tree/'controller.h').write_text(header)
-            source += '\n'+controller+'\n'+(HERE/'runtime.c').read_text()
+            source += '\n'+controller+'\n'
+            if recording: source += (HERE/'recording.c').read_text()+'\n'
+            source += (HERE/'runtime.c').read_text()
+        if boot:
+            if not runtime:
+                raise ValueError('boot requires runtime')
+            source += '\n'+(HERE/'boot.c').read_text()
         source += 'uint32_t slit_apply(uintptr_t b, uint32_t n, struct uia_outcome *o) { return uia_apply(b,n,o); }\n'
         (tree/'unity.c').write_text(source)
         assembly = tree/'adapter.S'

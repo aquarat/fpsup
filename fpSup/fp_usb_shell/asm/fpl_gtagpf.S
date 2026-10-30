@@ -85,6 +85,9 @@
 #ifndef N
 #error N required
 #endif
+#if defined(SLIT) && (N != 64 || defined(GYRO))
+#error "SLIT is the distinct 64-byte FPLS observation format"
+#endif
 .equ OBJ,         PARAM + 0x100
 .equ F_SUBJECT,   0xC0054E28
 .equ F_ATTACH,    0xC00CF208
@@ -118,7 +121,11 @@
 
 entry:
     push {r4-r8, lr}
+#ifdef SLIT
+    mov r4, r0                  @ owned parameter block, never loader staging
+#else
     addr r4, PARAM
+#endif
     mov r0, #1
     str r0, [r4]
     ldr r0, =N
@@ -131,7 +138,11 @@ entry:
     movne r0, #5
     bne install_done
     mov r5, r0
+#ifdef SLIT
+    add r6, r4, #0x100
+#else
     addr r6, OBJ
+#endif
     mov r7, #0                  @ index
     mov r8, #0                  @ empty slots
 scan:
@@ -174,7 +185,15 @@ observer:
     push {r4-r8, lr}
     sub sp, sp, #8
     mov r5, r1                  @ DataPool
+#ifdef SLIT
+    sub r4, r0, #0x100
+    ldr r0, [r4, #0x120]        @ retained slit_runtime
+    ldr r0, [r0, #0x204]        @ shared shutdown flag
+    cmp r0, #0
+    bne out
+#else
     addr r4, PARAM
+#endif
     ldr r0, [r4, #0x10]
     add r0, r0, #1
     str r0, [r4, #0x10]
@@ -204,6 +223,15 @@ do_build:
     str r0, [r4, #0x1C]
     mov r0, #0
     str r0, [r4, #0xF0]         @ a new take: frame index restarts
+#ifdef SLIT
+    str r0, [r4, #0x3C]         @ never reuse the previous take's template
+    ldr r0, [r4, #0x120]
+    ldr r0, [r0, #0x4C]         @ requested, not posted selection
+    cmp r0, #1
+    blo out
+    cmp r0, #4
+    bhi out
+#endif
     ldr r0, [r5]
     ldr ip, [r0, #DP_BUILDER]
     mov r0, r5
@@ -217,7 +245,11 @@ do_build:
     str r0, [r4, #0x28]
     ldr r0, =N
     str r0, [sp]
+#ifdef SLIT
+    add r0, r4, #0x200          @ immutable zero source, retained through copy
+#else
     addr r0, SRC
+#endif
     str r0, [sp, #4]
     mov r0, r6
     mov r1, #5                  @ MakerNote IFD
@@ -300,7 +332,10 @@ do_frame:
     cmp r1, r7
     bhi frame_skip              @ would overrun the template: refuse
     ldr r2, [r4, #0xF0]         @ this frame's counter = its index
-#ifdef GYRO
+#if defined(SLIT)
+    bl slit_frame
+    ldr r2, [r4, #0xF0]
+#elif defined(GYRO)
     mov r0, r2
     bl gyro_frame
     ldr r2, [r4, #0xF0]
@@ -540,6 +575,76 @@ find_gtag:
 ret0:
     mov r0, #0
     bx lr
+
+#ifdef SLIT
+/* FPLS v1: a per-DNG NOTIFY observation, NOT sensor-frame timing association.
+ * Fields after the identity header: requested, active, Vd count, trial,
+ * timing04, timing20, seconds, timer5, last Vd timer5, reason,
+ * association (=0 unknown), version (=1). No FrameRate/TimeCodes rewrite.
+ * In particular a transition/preroll frame must never be labelled slow merely
+ * because the registers were slow when its later DNG notification arrived.
+ * r4 PARAM, r6 template, r8 byte offset; same shared parser and native observer.
+ */
+slit_frame:
+    push {r4-r10, lr}
+    sub sp, sp, #64
+    mrs r10, cpsr
+    cpsid if
+    ldr r5, [r4, #0x120]
+    add r7, r5, #0x200
+    ldr r0, =0x534c5046          @ FPLS
+    str r0, [sp]
+    ldr r0, [r4, #0xF0]
+    str r0, [sp, #4]
+    mvn r0, r0
+    str r0, [sp, #8]
+    mov r0, #64
+    str r0, [sp, #12]
+    ldr r0, [r5, #0x4C]
+    str r0, [sp, #16]
+    ldr r0, [r7, #12]
+    str r0, [sp, #20]
+    ldr r0, [r7, #24]
+    str r0, [sp, #24]
+    ldr r0, [r7, #16]
+    str r0, [sp, #28]
+    addr r9, 0x30100000
+    ldr r0, [r9, #4]
+    str r0, [sp, #32]
+    ldr r0, [r9, #0x20]
+    str r0, [sp, #36]
+    addr r9, 0xC3076D98
+    ldr r0, [r9]
+    str r0, [sp, #40]
+    addr r9, 0x2D810054
+    ldr r0, [r9]
+    str r0, [sp, #44]
+    ldr r0, [r7, #60]
+    str r0, [sp, #48]
+    ldr r0, [r7, #40]
+    str r0, [sp, #52]
+    mov r0, #0
+    str r0, [sp, #56]
+    mov r0, #1
+    str r0, [sp, #60]
+    msr cpsr_c, r10
+    add r5, r6, r8
+    mov r1, #0
+1:  ldrb r0, [sp, r1]
+    strb r0, [r5, r1]
+    add r1, r1, #1
+    cmp r1, #64
+    blo 1b
+    bic r0, r5, #31
+    add r1, r5, #64
+2:  mcr p15, 0, r0, c7, c10, 1
+    add r0, r0, #32
+    cmp r0, r1
+    blo 2b
+    dsb sy
+    add sp, sp, #64
+    pop {r4-r10, pc}
+#endif
 
 #ifdef GYRO
 /* gyro_arm: r4 = PARAM, after mode 2 located the tag.  Places the block,

@@ -7,19 +7,31 @@
 .syntax unified
 .arm
 .text
-#ifndef OWNED
+#if !defined(OWNED) && !defined(RELOCATABLE)
 #error OWNED must be allocator-owned
 #endif
+#ifdef RELOCATABLE
+/* Code is copied to owner+1000 by the product launcher. No staged pointer. */
+.macro state reg
+    adr \reg, .Ldraw_entry
+    sub \reg, \reg, #0xc00
+.endm
+#else
 .equ STATE, OWNED+0x400
 .equ TABLE, OWNED+0x2000
+.macro state reg
+    ldr \reg, =STATE
+.endm
+#endif
 .equ OBJECT, 0xC38D37CC
 .equ STOCK, 0xC2E55A70
 .global entry, observe, image_end
 entry:
+.Ldraw_entry:
     push {r4-r8, lr}
     mov r8, sp
     bic sp, sp, #7
-    ldr r4, =STATE
+    state r4
     mrs r7, cpsr
     and r0, r7, #31
     cmp r0, #0x13
@@ -44,12 +56,20 @@ entry:
     cmpne r6, #2
     bne refused
     ldr r0, =STOCK
+#ifdef RELOCATABLE
+    add r1, r4, #0x1c00
+#else
     ldr r1, =TABLE
+#endif
     mov r2, #0
 verify_table:
     ldr r3, [r0, r2]
     cmp r2, #12
+#ifdef RELOCATABLE
+    adreq r3, .Ldraw_observe
+#else
     ldreq r3, =OWNED+0x1000+observe-entry
+#endif
     ldr ip, [r1, r2]
     cmp r3, ip
     bne refused
@@ -78,10 +98,11 @@ finish:
     pop {r4-r8, pc}
 
 observe:
+.Ldraw_observe:
     push {r4-r8, lr}
     mov r8, sp
     bic sp, sp, #7
-    ldr r4, =STATE
+    state r4
     mrs r6, cpsr
     cpsid if
     str r6, [r4, #0x4c]
@@ -156,7 +177,11 @@ skip_bit:
     ldr ip, [r4, #0xc]
     tst ip, #3
     bne callback_done
+#ifdef RELOCATABLE
+    add r3, r4, #0x2c00
+#else
     ldr r3, =OWNED+0x3000
+#endif
     cmp ip, r3
     blo callback_done
     add r3, r3, #0x5000

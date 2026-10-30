@@ -1,5 +1,102 @@
 # fp L development export validation
 
+## Ordinary boot, resident recording and FPLS export — 2026-10-30
+
+Baseline: public feature tip `ae437bab723ffc65f2d0a6b5a704f43c0e7d2fd7`.
+These are offline exported-tree checks, distinct from historical live evidence.
+**The active-take native size-change hang remains unresolved; physical recovery
+and original-card restoration are pending.** This source export is not a release.
+See [current observation status](FPL_RESIDENT_OBSERVATION.md).
+
+| Exported-tree suite | Result |
+|---|---|
+| Product bindings/recording/boot/runtime/adapter/controller/menu/native actions | **46 passed** |
+| Shared boot-chain/loader-hook/splash/fp L shell/UI restore/draw/packaging | **54 passed** |
+| Native FPLS and existing GTAG/parser | **12 passed** |
+
+**112 unique tests passed, no skips or expected failures.** The three targeted
+idle-shutdown/foreign-borrower/removal-mutation checks reported by the development
+handover are already within the recording suite, not three additional unique
+tests. The final source includes one more product test than the earlier 45-test
+handover run. Emitted-byte negative controls cover admission, cache publication,
+timing restore, observer removal and transition observation. Modeled scheduler,
+DMA, MMIO progression, allocation and cache effects do not establish live acceptance.
+
+Reproduce with Python 3, Unicorn, Capstone and an ARM compiler on PATH; set
+`FP_MAIN`, `FPL_MAIN`, `FPSUP_FP_MAIN="$FP_MAIN"`, `FPSUP_FPL_MAIN="$FPL_MAIN"`,
+`FPL_DATA` and `FPL_DNG_PREFIX` to external inputs:
+
+```sh
+# fpSup/slit_scan
+python3 -B -m unittest -v test_bindings test_recording test_boot test_runtime \
+  test_adapter test_controller test_menu test_native_actions
+# fpSup/fp_usb_shell
+python3 -B -m unittest -v test_boot_chain test_loader_hook test_splash \
+  test_fpl_shell_card test_fpl_ui_restore test_fpl_ui_draw test_card_packaging
+# projects/gyro2-sup
+python3 -B -m unittest -v test_fpl_gtagpf_slit test_fpl_gtagpf
+```
+
+All image/fixture checks remain enabled; nothing was copied into the export.
+
+| External input | Bytes | SHA-256 |
+|---|---:|---|
+| fp 5.02 MAIN | 49,245,696 | `aaa5208a028d9c4aebb9cc8614add723d456e96b2a95914f433079954320e622` |
+| fp L 3.02 MAIN | 49,310,208 | `fb8c20968e01ff9d8edf5f3e3f681c7341958048a004e717092c75e11106d4b9` |
+| fp L 3.02 DATA | 238,080 | `758daa9204c91763eb1298eea515b5bae97c2798e8ca9416329383e41a0790a8` |
+| Archived DNG-prefix fixture | 131,072 | `23e847a480b9c10336dfb397b467410762c66d94f28fac12c4a30a44c972501d` |
+
+The compiler was Zig 0.17.0 (executable SHA-256
+`5165c9a2d17938a8173839b3adf81d025b558d38d9e9711237a6fa5b8d8bb3f7`).
+The M0 target adapter ran all suites. For exact live-build reproduction, use
+the Cortex-A9 adapter: translate `armv7-none-eabi` to `arm-freestanding-eabi`
+and add `-mcpu=cortex_a9`, preserving other compiler arguments. The M0 adapter
+does not add that CPU to the C invocation, so its runtime is 148 bytes smaller;
+its artifact hashes are **not** the live-build hashes.
+The complete 46-test product suite also passed with the Cortex-A9 adapter,
+without skips; those repeated cases are not added to the unique-test total.
+
+Both Cortex-A9 exported-tree builds reproduce the observation-stage launcher,
+debug/plain BIN and AutoRun hashes in [the provenance table](FPL_RESIDENT_OBSERVATION.md)
+exactly. The alternate M0 build also passes build/extent guards: debug BIN
+55,656 bytes (`57b3b536d599d92dc979fdd98aef44b8f2326258d00532db893cb8687418a237`),
+plain BIN 51,540 bytes (`6bfdd5eddfb21a74db73c40acd9b120cffdd7b29cc71706eb3000bc640bd23f0`),
+shared launcher 50,028 bytes (`12fbc394305d8200c5466c09069e04620ce53606c23cac9fa151c374525cac21`).
+No rebuilt card was deployed or distributed.
+
+Existing non-SLIT pattern and gyro observer machine code is byte-identical to
+the public baseline for fixed `PARAM=0x4b001000,SRC=0x4b002000`:
+
+| Variant | Bytes | SHA-256 |
+|---|---:|---|
+| Pattern, N=560 | 1,568 | `2c216b76b96f7e56e24965ce84be70c1ac60e1e8c3575f1e6be9a7388a580f42` |
+| GYRO=1, N=1584 | 2,576 | `f2f1d9b78481b871ddfaf2f5e71959f710260b20e52db6cbf778b62deee238ff` |
+
+Additional read-only parser checks used three external whole DNGs (8,447,488
+bytes each): frame indices 1/10/24 returned Vd counts 9/17/31 and unknown sensor
+association. Six in-memory mutations (magic, zero frame, complement, size,
+association and version) were rejected. These were targeted parser checks, not
+additional unittest cases or new camera/decoder tests. Input SHA-256 values:
+
+- Frame 1: `20a328568ca8a151310e620182bf317ef2d0810efb05febbdfe5ca14ac8389ba`
+- Frame 10: `f923dc7460418cfd94e995a547ea956afd240289afa7e0872b92544a880a37c2`
+- Frame 24: `267b2210e9af5c0c79ee697602311f30a975ca82ac4aeb6ee52340eeff84abad`
+
+Catalogue reproduction remains blocked on the unavailable original `logo2.png`;
+the development attempt reached that blocker with fingerprinted external firmware.
+No replacement image, catalogue acceptance or release claim is made. Other
+outstanding gates include physical recovery, no-shell/disconnected-USB hardware,
+power cycling/previous-card boot, shutdown quiescence, failure/storage cleanup,
+sensor-frame association and resident exposure/metadata correction.
+
+The export preserves 20 implementation/test files byte-for-byte from the frozen
+development snapshot; 23 source fingerprints also match the final live-build
+provenance. Documentation is condensed/sanitized, with historical restoration
+clearly separated from the current failure. No new images, firmware, binaries,
+raw captures, private logs, toolchains or private ancestry are included. Previously
+approved illustrative images are unchanged. Review is by the exporting agent,
+not a separate independent reviewer; inherited public history is outside its scope.
+
 ## Slit-scan/native menu and offline ETTR export — 2026-10-29
 
 Baseline: published feature tip `582b7f61a6c2cd8b7f3025ef81a59c9ff8f91a9f`.

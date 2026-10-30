@@ -9,6 +9,16 @@
 These tools are for the corrected fp L worker, not the fp 5.02 cave tools.
 Live evidence and build hashes: [investigation log](FPL_PORT.md).
 
+Latest ordinary-card work: [native menu boot](FPL_STANDALONE_BOOT.md),
+[resident recording](FPL_RESIDENT_RECORDING.md), and
+[per-DNG observations/current failure](FPL_RESIDENT_OBSERVATION.md).
+The explicit `--fpl-ui-boot` profile and opt-in `slit_scan/build_card.py --recording`
+connect native selection to UHD/8-bit/24 timing in the same owner/shared restore
+object. Historical headless-only restrictions below do not describe that profile.
+Resident automatic exposure and corrected DNG metadata remain unfinished.
+The active-take size-change trial hung the camera; physical recovery and original
+card restoration are pending. USB lifecycle limitations remain applicable.
+
 ## Connection
 
 Use one daemon with PID filter `0xc442`, retaining the echo guards.
@@ -147,8 +157,7 @@ Worker-handoff `reconcile` still rejects that schema; it is not a completed
 handoff record. There is no retry, resume, cancellation, join or free CLI.
 Boot identity cannot be established from publication equality alone.
 
-The manifest and exact helper/readback artifacts are under private research
-storage at `fpl-live-2026-10-23/gyro-retained-task-first/`. Consult
+The manifest and exact helper/readback artifacts remain external. Consult
 [the retained-task record](FPL_GYRO_RETAINED_TASK.md) before further deployment.
 Data remains uncalibrated and conditionally coherent, with proven-valid count
 zero; this tool is not a continuous or recording-aware logger.
@@ -211,8 +220,7 @@ after the owner is idle. While it may be attached, `fpl_gtagpf.py` holds the
 shared `~/.cache/fpsup/fpl-staging.pending` marker (schema
 `fpl-gtagpf-observer-v1`), which blocks every staging tool; any failure leaves
 it, and `--teardown` clears the observer's slot (owner idle only) and then the
-marker. Evidence directories:
-`~/.local/share/fpsup-research/fpl-live-2026-10-2{3,4}/gtag*/`. Tests:
+marker. Raw evidence remains external. Tests:
 `projects/gyro2-sup/test_fpl_gtag560.py`, `test_fpl_gtagpf.py`.
 
 ```sh

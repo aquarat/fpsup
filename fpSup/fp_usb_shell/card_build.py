@@ -24,6 +24,7 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+import tempfile
 
 from armasm import assemble, symbols
 from firmware import get_camera
@@ -97,7 +98,7 @@ def build_vbin(sections, entries):
             + table + body, entry, sections)
 
 
-def artifact(stock_sections=()):
+def artifact(stock_sections=(), *, boot_bins=(), shell=True, admission=(), slit_recording=False):
     """Assemble the real chain and build the VBIN the loader reads."""
     defines = list(CAMERA.loader_defines())
     ld = defines + [f'LOADER_BASE={DIR_ENTRY:#010X}',
@@ -108,16 +109,29 @@ def artifact(stock_sections=()):
     if len(loader) > 0x200:
         raise ValueError(f'loader is {len(loader)} bytes; the descriptor at '
                          f'+0x200 would overlap')
-    stage2 = assemble(HERE / 'asm/stage2.S',
-                      defines + ['LH_RESTORE=1', f'LOADER_BASE={DIR_ENTRY:#010X}'])
+    with tempfile.TemporaryDirectory(prefix='fpl-admission-') as tmp:
+        sd = defines + ['LH_RESTORE=1', f'LOADER_BASE={DIR_ENTRY:#010X}']
+        if slit_recording: sd.append('FPL_SLIT_RECORDING=1')
+        if admission:
+            path = Path(tmp)/'words.bin'
+            path.write_bytes(b''.join(struct.pack('<II', a, v) for a, v in admission)+bytes(8))
+            sd += [f'S2_ADMISSION="{path}"']
+        stage2 = assemble(HERE / 'asm/stage2.S', sd)
     worker = assemble(HERE / 'camera/worker.S', defines)
     w = symbols(HERE / 'camera/worker.S', defines)
     # The fp-only bootstrap is compiled out: spawn is the first thing in the
     # worker image (assert rather than assume).
     if w['spawn'] != 0:
         raise ValueError(f"spawn sits at +{w['spawn']:#x}, not the image start")
-    sections = [(0, stage2), (0, worker), *stock_sections]  # runtime hooks are journaled first
-    binfile, entry, _ = build_vbin(sections, [(1, w['spawn'])])
+    sections, entries = [(0, stage2)], []
+    if shell:
+        entries.append((len(sections), w['spawn']))
+        sections.append((0, worker))
+    sections.extend(stock_sections)  # all runtime hooks journaled before entries
+    for blob, offset in boot_bins:
+        entries.append((len(sections), offset))
+        sections.append((0, blob))
+    binfile, entry, _ = build_vbin(sections, entries)
     if len(binfile) > READ_CAP:
         raise ValueError('binary exceeds the ordinary loader read capacity')
     return dict(loader=loader, stage2=stage2, worker=worker,
@@ -149,7 +163,7 @@ DIAG_POOL = 0x4533AEC0
 DIAG_SLEEP_MS = 90000               # the host window while the script waits
 
 
-def card(image, diag=False, *, trial=True, stock_sections=()):
+def card(image, diag=False, *, trial=True, stock_sections=(), boot_bins=(), shell=True, ui_boot=False, slit_recording=False):
     """(AutoRun lines, manifest) for the bring-up trial (diag: + NOPTP,
     a USB wait window, and state dumps that localize a silent worker)."""
     seen = set()
@@ -161,7 +175,23 @@ def card(image, diag=False, *, trial=True, stock_sections=()):
         if DIR_ENTRY <= address < DIR_ENTRY+RESTORE_LEN or address in (ECHO_SLOT, IFACE, NOPTP1, NOPTP2):
             raise ValueError('runtime hook declaration overlaps shell bootstrap')
         seen.add(address)
-    art = artifact(stock_sections)
+    admission = []
+    if slit_recording and not ui_boot:
+        raise ValueError('slit recording requires ordinary UI boot')
+    if ui_boot:
+        from fpl_ui_restore import stock_sections as ui_sections
+        expected = ui_sections(image)
+        if list(stock_sections) != expected or not boot_bins or trial:
+            raise ValueError('fp L UI boot requires exactly six stock string words and a boot entry')
+        # This native BSS vtable, verified constructed at ordinary AutoRun time,
+        # is restored by the SAME shared journal, not a product shutdown object.
+        stock_sections = [*stock_sections, (0xC38D37CC, struct.pack('<I', 0xC2E55A70))]
+        if slit_recording: stock_sections.append((0xC31D6DD8, bytes(4)))
+        admission = [(a, struct.unpack('<I', b)[0]) for a, b in stock_sections]
+    elif boot_bins or not shell:
+        raise ValueError('fp L product entries require the explicit UI boot profile')
+    art = artifact(stock_sections, boot_bins=boot_bins, shell=shell, admission=admission,
+                   slit_recording=slit_recording)
     stock = image[DIR_ENTRY - BASE:DIR_ENTRY - BASE + RESTORE_LEN]
     iface_stock = struct.unpack_from('<I', image, IFACE - BASE)[0]
     if iface_stock != IFACE_STOCK:
@@ -177,7 +207,8 @@ def card(image, diag=False, *, trial=True, stock_sections=()):
     if trial:
         lines.append(f'mem save \\{PROBE_DIR}\\SHELL-PRE.BIN 0x{DIR_ENTRY:08X},,0x{RESTORE_LEN:X}')
     lines.append('# --- interface class patch: stop the host PTP stack claiming interface 0')
-    lines.append(f'mem set 0x{IFACE:08X} 0x{IFACE_PATCH:08X}')
+    if shell:
+        lines.append(f'mem set 0x{IFACE:08X} 0x{IFACE_PATCH:08X}')
     if diag:
         # The firmware's own PTP receiver, off (see NOPTP above): without this
         # the receiver arms EP 0x01 OUT on the firmware buffer and the worker
@@ -267,16 +298,18 @@ def card(image, diag=False, *, trial=True, stock_sections=()):
     return lines, manifest, art
 
 
-def ordinary_card(main, *, stock_sections=()):
+def ordinary_card(main, *, stock_sections=(), boot_bins=(), shell=True, ui_boot=False, slit_recording=False):
     """Offline-tested headless shell: NOPTP on, no evidence files or wait window.
 
-    Optional stock-word sections reserve runtime hook restoration. Not Fast,
-    UI installation or arbitrary product packaging. The loader/worker remain
-    byte-identical to the diagnostic trial; only the AutoRun presentation and
-    evidence commands differ. Firmware patches retain the trial's lifetime.
+    Optional stock-word sections reserve runtime hook restoration. The explicit
+    ui_boot profile adds pre-placement admission, the native draw-word journal
+    declaration and returning boot-bin entries; it also permits no-shell cards.
+    No Fast or arbitrary product profile. Default loader/worker/stage2 and
+    script bytes remain identical. Debug USB patches retain the trial lifetime.
     """
     image = CAMERA.verify_main(main)
-    lines, _, art = card(image, diag=True, trial=False, stock_sections=stock_sections)
+    lines, _, art = card(image, diag=shell, trial=False, stock_sections=stock_sections,
+                        boot_bins=boot_bins, shell=shell, ui_boot=ui_boot, slit_recording=slit_recording)
     commands = [line for line in lines if not line.startswith('#')]
     return '\n'.join(commands) + '\n', art
 

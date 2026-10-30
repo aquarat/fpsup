@@ -1,5 +1,14 @@
 # fp L slit-scan development — 26 October 2026
 
+**30 October follow-up:** [ordinary native-menu boot](FPL_STANDALONE_BOOT.md),
+[resident 4/6/8/12 fps recording](FPL_RESIDENT_RECORDING.md) and
+[per-DNG FPLS observations](FPL_RESIDENT_OBSERVATION.md) now have debug-card
+camera evidence, including a 90-second take. Active-take native size change
+then hung the camera; physical recovery and original-card restoration are pending.
+Sensor-frame association, corrected metadata and resident automatic exposure
+remain unfinished. Earlier installation-gap/restored-state statements below
+describe historical trials. Physical power-switch acceptance remains open.
+
 Target: fp L 3.02. Active optical scan slowdown is now measured on camera.
 This is an active implementation record, not a released standalone product.
 

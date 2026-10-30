@@ -25,14 +25,15 @@ def stock_sections(image):
             for site in ui.STRING_SITES.values() for offset in (0, 4)]
 
 
-def restore_code():
+def restore_code(*, slit=False):
     source = HERE/'asm/stage2.S'
     defines = CAMERA.loader_defines()+['LH_RESTORE=1', f'LOADER_BASE={DIR_ENTRY:#x}']
+    if slit: defines.append('FPL_SLIT_RECORDING=1')
     code, symbols = armasm.assemble(source, defines), armasm.symbols(source, defines)
     return code[symbols['lh_unhook']:symbols['lh_unhook_end']]
 
 
-def inspect(read, image):
+def inspect(read, image, *, draw=False, slit=False):
     if read(MANAGER, 1) != [0xC0726CEC]:
         raise ValueError('power-off manager vtable differs')
     lists = {name: list(read(MANAGER+offset, 10))
@@ -43,7 +44,7 @@ def inspect(read, image):
             raise ValueError('invalid power-off list')
         if 0 in values and any(values[values.index(0)+1:]):
             raise ValueError('power-off list has a hole')
-    code = restore_code()
+    code = restore_code(slit=slit)
     candidates = []
     for obj in sorted(set(lists['ordinary']) & set(lists['forced']) - {0}):
         vtable, routine, journal = read(obj, 3)
@@ -59,7 +60,8 @@ def inspect(read, image):
                 break
             length = read(cursor+4, 1)[0]
             if (len(entries) == 64 or address & 3 or not 0 < length <= 4096 or length & 3 or
-                    address < 0xC0000000 or address+length > 0xC0000000+len(image)):
+                    not (0xC0000000 <= address and address+length <= 0xC0000000+len(image) or
+                         address in (0xC38D37CC, 0xC31D6DD8) and length == 4)):
                 raise ValueError('invalid or oversized firmware journal entry')
             total += length+8
             if total > 16384:
@@ -76,7 +78,12 @@ def inspect(read, image):
         raise ValueError('expected one matching shared journal in both lists')
     block = candidates[0]
     sites = []
-    for address, data in stock_sections(image):
+    expected = stock_sections(image)
+    if draw:
+        expected.append((0xC38D37CC, struct.pack('<I', 0xC2E55A70)))
+    if slit:
+        expected.append((0xC31D6DD8, bytes(4)))
+    for address, data in expected:
         values = [e['words'][(address-e['address'])//4] for e in block['entries']
                   if e['address'] <= address < e['address']+e['bytes']]
         want = struct.unpack('<I', data)[0]

@@ -5,6 +5,16 @@ Implementation started 2026-10-23 after integration of public upstream
 `fpSup/`; upstream research and project sources are at repository root.
 This follows [the parity roadmap](FPL_PARITY_ROADMAP.md).
 
+Latest slice: [ordinary menu boot](FPL_STANDALONE_BOOT.md),
+[resident recording](FPL_RESIDENT_RECORDING.md), and
+[per-DNG observations](FPL_RESIDENT_OBSERVATION.md). The debug card measured
+4/6/8/12 fps on UHD/8-bit/24; Off, unsupported-mode refusal, repeated normal stops
+and a 90-second 4 fps take passed live. An active-take native size change then
+hung the camera. Physical recovery and original-card restoration are pending.
+Automatic resident exposure, sensor-frame association and rate/timecode correction
+remain unfinished. Physical-power and general M1/M2 gates remain open.
+Earlier implementation/restoration status below is historical.
+
 ## Active slices
 
 | Milestone | Implementation scope | Acceptance still required |
@@ -448,8 +458,8 @@ frame notify the observer received produced a write (writes == notifies). The
 run did not list `A001_004`, so that the card holds exactly 83 frames (no
 frame without a notify) is inferred from the sampled frame 83, not checked. Camera back to stock afterwards
 (echo stock, owner idle, six stock observers, host cleared the observer's own
-slot). Evidence: private `fpl-live-2026-10-24/gtagpf-take/` (README, events,
-six whole frames, hashes). Still open in M3: Vd timing (the sensor frame-sync
+slot). Evidence remains external (events, six whole frames and hashes).
+Still open in M3: Vd timing (the sensor frame-sync
 hook model, untouched here), other modes, per-frame rewrites with N > 560,
 and the veto path.
 
@@ -524,9 +534,8 @@ and per-frame gyro data reaches every DNG with no hook.
 **Frame 1 lost a hidden lap.** Arming at mode 2 preceded frame 1 by 331 ms,
 more than the 240 ms ring: 827 records were due, the heads showed 227 (one lap
 fewer), and the 189 copied are mislabelled. The first report missed it (its
-lap check skipped frame 1; fixed, with a test). Evidence: private
-`fpl-live-2026-10-24/gyro-take/` (README, events, recovered counters, 134
-prefixes, two whole frames, records CSV, hashes).
+lap check skipped frame 1; fixed, with a test). Evidence remains external
+(events, recovered counters, 134 prefixes, two whole frames, records CSV, hashes).
 
 **Frame-1 fix, second live take: complete (24 October).** Frame 1 now reaches
 back exactly one block's capacity (189 records, ~76 ms) from its own latch, as
@@ -538,7 +547,7 @@ Live (`A001_006`, fixed `--run` end to end, exit 0): 132 frames = 132
 notifies, all blocks status 0, cursor unbroken, **13,818 records, 0 dropped,
 0 pad errors, no lap suspects**, rate 2499.49 Hz, H = StripOffsets =
 `0x13C00`. The arming gap was 337 ms again: systematic, so the reach-back is
-required. Teardown clean. Evidence: private `fpl-live-2026-10-24/gyro-take-2/`.
+required. Teardown clean. Raw evidence remains external.
 
 M3 now has a hookless, lossless per-frame gyro stream into every CinemaDNG
 frame of a short take on this mode. Still open for the M3 gate: scales and

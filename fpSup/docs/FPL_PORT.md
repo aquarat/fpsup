@@ -4,18 +4,30 @@ This is an experimental shared-code port, not a released fp L product card.
 The downloadable fp products still target firmware 5.02. Firmware images and
 raw camera observations are not included.
 
-## Latest development: slit-scan and offline ETTR
+## Latest development: resident slit-scan and per-DNG diagnostics
+
+**Known live failure:** an active-take native size change hung the camera and
+blocked the shell. Physical recovery and original-card restoration are pending;
+the test card remains installed. Do not change native format/size/rate during
+recording. [Current evidence and limitations](FPL_RESIDENT_OBSERVATION.md).
 
 - **USB-host slit-scan capture is live-tested:** 4/6/8/12 fps, short-exposure
   compensation, fixed ISO, single UHD RAW-frame and DNG-sequence export,
   interruption restoration and hash-checked resume. Optical moving-bar evidence
   confirms scan slowdown. [Capture guide](../tools/slit-scan-camera/README.md)
   and [results with example images](FPL_SLIT_SCAN.md).
-- **Native menu selection is live-tested:** Off/4/6/8/12 fps, repeated
-  Left/Right/OK, both wrap directions and MENU exit/reentry. The temporary
-  RAM-only controller does not yet drive recording. Standalone timing/recording,
-  boot installation, repeated physical power-switch and long-duration acceptance
-  remain unfinished. [UI hooks and lifecycle](FPL_UI_HOOK.md).
+- **Ordinary debug-card boot and native recording are live-tested:** the owned
+  menu installs without a host RAM installer. Off/4/6/8/12 fps, repeated keys,
+  wrap and reentry passed; opt-in recording measured all four rates on UHD
+  CinemaDNG 8-bit nominal24. Off, unsupported-mode refusal, repeated takes and
+  normal-stop restoration passed. [Boot](FPL_STANDALONE_BOOT.md) and
+  [recording](FPL_RESIDENT_RECORDING.md).
+- **Per-DNG FPLS diagnostics are live-tested:** repeated 4 fps takes including
+  90 seconds and whole sampled DNG decoding passed. Observations identify DNG
+  notifications, not sensor frames. Frame-exact association, rate/timecode
+  correction and resident automatic exposure compensation remain unfinished.
+  No-shell hardware, disconnected USB, physical power cycles, shutdown quiescence
+  and broader stress acceptance remain open. This is not a release.
 - **Auto ETTR/deflicker is offline groundwork:** RAW metering, bounded exposure
   planning, DNG analysis and JSON/XMP sidecars. Native RAW ownership, calibration,
   settling, controls and still/interval capture integration remain unfinished.
@@ -29,10 +41,12 @@ menu screenshots. Raw captures, operational manifests and firmware stay external
 - One loader, stage2, worker and container implementation, with explicit
   firmware profiles. Default fp bindings retain their established behavior.
 - The restricted ordinary headless shell builder uses
-  `--camera fp-l-3.02 --fpl-shell`. Fast, UI and arbitrary product combinations
-   are not admitted. Optional unique stock-word sections reserve shared-loader
-   restoration for runtime hooks; they do not install a UI. The shorter ordinary
-   AutoRun is offline-tested only.
+  `--camera fp-l-3.02 --fpl-shell`. The explicit `--fpl-ui-boot` profile admits
+  the narrow product boot entry and optional no-shell build. Recording additionally
+  uses `--fpl-slit-recording`. Pre-placement admission and one shared journal
+  protect declared string/drawing/Vd sites. Fast and arbitrary product combinations
+  remain unsupported. Ordinary debug-card boot has live evidence; plain/no-shell
+  boot has only emulation evidence.
 - Historical fp L hardware trials verified shell execution, bidirectional RAM
   transfers, card upload/download readbacks and the reviewed same-size worker
   handoff. Unattended reboot recovery and arbitrary worker replacement remain

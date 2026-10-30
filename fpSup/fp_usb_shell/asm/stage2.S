@@ -91,6 +91,28 @@ stage2:
     bic     sp, sp, #7                  @ align ALL helper and firmware calls
     mov     r6, r0
 
+#ifdef S2_ADMISSION
+    /* Composition-owned refusal gate, BEFORE journaling or placement. A second
+     * ordinary AutoRun must not overwrite live hooks with stock declarations.
+     * Pairs {word address, expected value}, terminated by zero; no owner pointer
+     * is followed and the existing entry ABI is unchanged. */
+#ifdef FPL_SLIT_RECORDING
+    movw    r0, #:lower16:(s2_admission - .Lslit_admission_pc - 8)
+.Lslit_admission_pc:
+    add     r0, pc, r0
+#else
+    adr     r0, s2_admission
+#endif
+1:  ldmia   r0!, {r1, r2}
+    cmp     r1, #0
+    beq     2f
+    ldr     r3, [r1]
+    cmp     r3, r2
+    bne     .Ls2_done
+    b       1b
+2:
+#endif
+
     /* Hand the cave's allocator a fresh start, before anybody can ask.
      *
      * One word holds the next free cave address and a payload takes what it
@@ -620,6 +642,9 @@ lh_unhook:
     mov     r6, sp
     bic     sp, sp, #7
     ldr     r4, [r0, #8]                @ the journal
+#ifdef FPL_SLIT_RECORDING
+#include "../../slit_scan/shutdown.S"
+#endif
 1:  ldr     r0, [r4]
     cmp     r0, #0
     beq     3f
@@ -812,4 +837,10 @@ lb_one:     .asciz  "1"
 lb_text:    .asciz  LH_BANNER_TEXT
 .balign 4
 #endif
+#endif
+
+#ifdef S2_ADMISSION
+.balign 4
+s2_admission:
+    .incbin S2_ADMISSION
 #endif
