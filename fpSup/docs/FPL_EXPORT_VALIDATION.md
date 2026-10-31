@@ -1,11 +1,125 @@
 # fp L development export validation
 
+## Queue/lookup/producer provenance and offline exposure — 2026-10-31
+
+Baseline: public feature tip `e02762d32f3277a05e766f3c777bf8064504d365`.
+These are offline exported-tree checks, separate from archived camera evidence.
+October31 battery recovery and original-card/stock restoration were verified,
+including after the latest [v4 trial](FPL_PRODUCER_PROVENANCE.md). The active-take
+native size-change hang is still **unfixed**. This source publication is not a release.
+
+| Exported-tree suite | Result |
+|---|---:|
+| Product, native queue, exposure refusal/controller, notification timeline, runtime/boot/menu | 82 passed |
+| Producer trace and producer boot/admission | 13 passed |
+| Shared chain, guard, drawing/restore, packaging, host coupled-exposure restoration | 70 passed |
+| Native FPLS v1–v4 and existing GTAG/parser | 21 passed |
+
+**186 unique tests passed, no skips or expected failures.** Test identities were
+checked for overlap. Meaningful mutations cover displaced replay, IRQ exclusion,
+whole-leaf saved-PC admission, journal coverage, compressed backreferences,
+historical-vs-notify snapshots, exposure dirty/closing/readback/save ordering and
+native seam checks. Native instructions run against the fingerprinted official
+images; allocator, OS/scheduler, MMIO progression, cache and concurrency fixtures
+do not establish sensor physics or native hardware acceptance.
+
+Set the external input variables listed below, using the **Cortex-A9** compiler
+adapter for all these runs:
+
+```sh
+# fpSup/slit_scan
+python3 -B -m unittest -v test_bindings test_queue_binding test_exposure \
+  test_metadata test_recording test_boot test_runtime test_adapter \
+  test_controller test_menu test_native_actions
+python3 -B -m unittest -v test_producer_boot test_producer_trace
+# fpSup/fp_usb_shell
+python3 -B -m unittest -v test_boot_chain test_loader_hook test_splash \
+  test_fpl_shell_card test_fpl_ui_restore test_fpl_ui_draw test_fpl_ui_guard \
+  test_card_packaging test_fpl_slit_scan
+# projects/gyro2-sup
+python3 -B -m unittest -v test_fpl_gtagpf_slit test_fpl_gtagpf
+```
+
+External official fp/fp L MAIN, DATA and archived prefix sizes/hashes match the
+table in the October30 section. Compiler: Zig0.17.0, executable SHA-256
+`5165c9a2d17938a8173839b3adf81d025b558d38d9e9711237a6fa5b8d8bb3f7`;
+adapter translates `armv7-none-eabi` to `arm-freestanding-eabi` and adds
+`-mcpu=cortex_a9`, preserving other arguments. Inputs/toolchains remain external.
+
+### Exact build reproduction
+
+Eight fresh exported-tree builds (v1/v2/v3/v4, each debug/plain) reproduced the
+expected BIN, launcher and AutoRun bytes. Start with `build_card.py --recording`;
+v2 adds `--queue-observation`, v3 additionally `--lookup-observation`, v4
+additionally `--producer-observation`. `--debug` adds the existing shell; plain
+hardware boot remains untested. Use fresh external output directories and
+`--fp-main "$FP_MAIN" --fpl-main "$FPL_MAIN"`.
+
+| Launcher | Bytes | SHA-256 |
+|---|---:|---|
+| v1 | 50,176 | `52aebc6ccdfdd55586e9f4a97c74dcd4e1e314543bbf2e2846baf971c68d6218` |
+| v2 | 50,648 | `2513c8c6132fa050990cbe9acbbcfb1995821f8ce8f9dadb31dd58b05663f8ae` |
+| v3 | 51,208 | `ffdd63e5bfb89a907c646742094efa41e312539f9b24b6fe52b87305e4651053` |
+| v4 | 39,440 | `b593d57bc62967d02f9efa3b525cf9816d755033a5f50abba4c4fb5d77e367e0` |
+
+Debug/plain v1 BIN hashes match [observation provenance](FPL_RESIDENT_OBSERVATION.md).
+V2 debug matches [queue provenance](FPL_QUEUE_IDENTITY.md); plain52,160 bytes:
+`21e41b2b2aaca6b09106cb9c9201af70e0ea8993e27bc45ea79c018da8c7a15c`.
+Both v3 hashes match [lookup provenance](FPL_LOOKUP_PROVENANCE.md).
+V4 debug45,148 bytes:
+`ebfcefbe2c3c24a0d90091155c649345df68cae119cf8329ba964a6d2ef782c0`;
+plain41,032 bytes:
+`c4deeebd546def3124f0e15160f554ddb03ca73eb2745377c735b064abc71a78`.
+Across all versions, debug AutoRun6,654 SHA-256
+`0edb0e802b5c1665705af5463f2941e257b4f2057ea045ea9b9bd841ea5a734c`
+and plain AutoRun6,564 SHA-256
+`a27965148c4175a4b2d853e9b38571fb6a8975182fd9eacb735401dedffe43f7`
+remain unchanged. Artifacts stayed outside the public tree; none was deployed or
+distributed. Existing non-SLIT pattern/gyro machine code also matches the public
+baseline exactly, with the same fixed arguments and hashes listed below. Its
+first comparison attempt lacked a relative assembly include in the isolated
+fixture; preserving the source directory layout resolved that input error.
+
+### Read-only archived-data checks and publication scope
+
+The exported parser/timeline read all **277 archived records**:92 v2,92 v3 and93 v4,
+from six takes. Every file/prefix was fingerprinted before analysis and rehashed
+afterwards. Nominal FrameRate24000/1000, original TimeCodes, unknown capture time
+and unknown exposure association were retained. V2 raw clocks were not promoted;
+v3/v4 clocks were valid, and all93 v4 records joined historical hits/generations.
+These checks did not capture or rewrite DNGs, or rerun optical/decoder acceptance.
+Per-input hashes and complete reports stay in the private export audit.
+
+All29 changed implementation/test files are byte-identical to the frozen
+development snapshot and match the latest live-build source provenance. Four new
+handover documents are condensed/sanitized; existing public docs receive status
+updates. Operational backup/log locations, raw observations, personal host/device/
+session identifiers and private commit references are omitted; technical hashes
+and limitations are retained. No source/test behavior was altered for export.
+
+Review covers all outgoing complete UTF-8 blobs, filenames, local Markdown links,
+credentials/identifiers, encoded/binary content, commit metadata and ancestry.
+The staged firmware/decompiler guard is run against both official MAIN images
+with NumPy; no optional Ghidra export is supplied, so exact Ghidra-line matching
+is unavailable. This is the exporting agent's review, not independent review or
+a new audit of inherited public history. No firmware, generated binaries, raw
+captures, toolchains, private history or new images are published.
+
+**Outstanding:** optical common-clock sensor-phase qualification before capture
+metadata correction; native request deferral/settings serialization before
+resident exposure (`--exposure` remains refused and its controller is absent from
+cards); physical-power/no-shell/disconnected-USB and broader shutdown/failure/
+stress acceptance; the unfixed active-take size-change hang. Catalogue reproduction
+still lacks the original `logo2.png`; no substitute or catalogue pass is claimed.
+
 ## Ordinary boot, resident recording and FPLS export — 2026-10-30
 
 Baseline: public feature tip `ae437bab723ffc65f2d0a6b5a704f43c0e7d2fd7`.
 These are offline exported-tree checks, distinct from historical live evidence.
-**The active-take native size-change hang remains unresolved; physical recovery
-and original-card restoration are pending.** This source export is not a release.
+**Historical October30 status:** the active-take native size-change hang left
+physical recovery and original-card restoration pending at that export. Both
+recovery and restoration subsequently passed on October31; the defect remains
+unfixed. This source export is not a release.
 See [current observation status](FPL_RESIDENT_OBSERVATION.md).
 
 | Exported-tree suite | Result |
@@ -85,7 +199,7 @@ additional unittest cases or new camera/decoder tests. Input SHA-256 values:
 Catalogue reproduction remains blocked on the unavailable original `logo2.png`;
 the development attempt reached that blocker with fingerprinted external firmware.
 No replacement image, catalogue acceptance or release claim is made. Other
-outstanding gates include physical recovery, no-shell/disconnected-USB hardware,
+outstanding gates at that export included physical recovery, no-shell/disconnected-USB hardware,
 power cycling/previous-card boot, shutdown quiescence, failure/storage cleanup,
 sensor-frame association and resident exposure/metadata correction.
 

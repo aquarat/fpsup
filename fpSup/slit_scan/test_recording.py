@@ -50,14 +50,16 @@ class Machine(b.Machine):
 
 
 class Recording(unittest.TestCase):
+    queue_observation = False
     @classmethod
     def setUpClass(cls):
         cls.fp, cls.fpl = Path(os.environ['FP_MAIN']), Path(os.environ['FPL_MAIN'])
         cls.image = a.restore.CAMERA.verify_main(cls.fpl)
         b.c.registry.SEG0_SIZE = len(cls.image)
         cls.block, cls.info, cls.reference = b.product.menu.build(cls.fp, cls.fpl)
-        cls.text = build(runtime=True, boot=True, recording=True)
-        cls.launch, cls.layout = b.product.payload(cls.fp, cls.fpl, recording=True)
+        lookup=getattr(cls,'lookup_observation',False)
+        cls.text = build(runtime=True, boot=True, recording=True, queue_observation=cls.queue_observation,lookup_observation=lookup)
+        cls.launch, cls.layout = b.product.payload(cls.fp, cls.fpl, recording=True, queue_observation=cls.queue_observation,lookup_observation=lookup)
         cls.sections = a.restore.stock_sections(cls.image)
 
     def machine(self, debug=False):
@@ -242,6 +244,81 @@ class Recording(unittest.TestCase):
             if shutdown: m.call(m.word(obj+4),obj,4)
             else: m.put(bindings.RECORDING,0x10000);self.irq(m)
             with self.assertRaises(AssertionError): self.assertEqual(m.word(0x30100004),T04)
+
+
+class QueueRecording(unittest.TestCase):
+    queue_observation = True
+    setUpClass = classmethod(Recording.setUpClass.__func__)
+    machine = Recording.machine
+    booted = Recording.booted
+    irq = Recording.irq
+    active = Recording.active
+
+    def test_debug_and_plain_queue_card_boot_and_idle_shutdown(self):
+        for debug in (False,True):
+            m,p,o,_=self.booted(debug)
+            self.assertEqual(len(m.tasks),int(debug))
+            self.assertEqual(m.word(o+0x2434),336)
+            self.assertLessEqual(len(m.bin),61440)
+            self.assertEqual(bytes(m.u.mem_read(o+0x2600,336)),bytes(336))
+            obj=m.registrations[0][0];m.call(m.word(obj+4),obj,1)
+            self.assertEqual(m.word(b.DRAW),b.STOCK)
+            self.assertNotIn(o+0x2500,[m.word(0xC31AB0D0+i*4) for i in range(9)])
+
+    def test_ring_records_before_timing_write_wraps_and_resets(self):
+        m,p,o = self.active()
+        self.assertEqual(m.word(o+0x82ec),8)
+        self.assertEqual(m.word(o+0x82f0+7*16+4),T04) # eighth IRQ changed timing AFTER sample
+        m.put(0xC343B858,1)
+        for i in range(20):
+            m.put(0xC343B6D4,100+i);self.irq(m)
+        self.assertEqual(m.word(o+0x82ec),28)
+        for i in range(12,28):
+            at=o+0x82f0+(i&15)*16
+            self.assertEqual(m.word(at),100+i-8)
+            self.assertEqual(m.word(at+4),0x0c471ae7)
+            self.assertEqual(m.word(at+12),i+1)
+        m.put(bindings.RECORDING,0x10000);self.irq(m);m.draw()
+        m.put(bindings.RECORDING,0x10001);m.draw()
+        self.assertEqual(bytes(m.u.mem_read(o+0x82ec,260)),bytes(260))
+
+    def test_queue_load_mutation_detected_and_shutdown_still_restores(self):
+        from unicorn import UC_HOOK_MEM_READ
+        m,p,o=self.active();m.put(0xC343B858,1);m.put(0xC343B6D4,123)
+        pcs=[]
+        h=m.u.hook_add(UC_HOOK_MEM_READ,lambda u,a,at,n,v,d:
+            pcs.append(u.reg_read(UC_ARM_REG_PC)) if at==0xC343B6D4 else None)
+        self.irq(m);m.u.hook_del(h)
+        self.assertEqual(len(pcs),1)
+        m.u.mem_write(pcs[0],struct.pack('<I',0xE320F000));m.u.ctl_remove_cache(pcs[0],pcs[0]+4)
+        self.irq(m)
+        with self.assertRaises(AssertionError):self.assertEqual(m.word(o+0x82f0+9*16),123)
+        obj=m.registrations[0][0];m.call(m.word(obj+4),obj,4)
+        self.assertEqual(m.word(SLOT),0);self.assertEqual(m.word(0x30100004),T04)
+        self.assertNotIn(o+0x2500,[m.word(0xC31AB0D0+i*4) for i in range(9)])
+
+
+class LookupRecording(unittest.TestCase):
+    queue_observation=True
+    lookup_observation=True
+    setUpClass=classmethod(Recording.setUpClass.__func__)
+    machine=Recording.machine
+    booted=Recording.booted
+    test_foreign_vd_refuses_before_journal_and_admission_mutation_is_detected=Recording.test_foreign_vd_refuses_before_journal_and_admission_mutation_is_detected
+
+    def test_owned_lookup_debug_plain_boot_caps_journal_and_shutdown(self):
+        for debug in (False,True):
+            m,p,o,_=self.booted(debug)
+            self.assertEqual(len(m.tasks),int(debug))
+            self.assertEqual(m.word(o+0x2434),464)
+            self.assertEqual(bytes(m.u.mem_read(o+0x2600,464)),bytes(464))
+            self.assertLessEqual(len(m.bin),61440)
+            self.assertLessEqual(len(self.text.code),0x5000)
+            self.assertTrue(a.restore.inspect(lambda at,n:[m.word(at+i*4) for i in range(n)],
+                self.image,draw=True,slit=True)['complete'])
+            obj=m.registrations[0][0];m.call(m.word(obj+4),obj,1)
+            self.assertEqual(m.word(b.DRAW),b.STOCK)
+            self.assertNotIn(o+0x2500,[m.word(0xC31AB0D0+i*4) for i in range(9)])
 
 
 if __name__=='__main__': unittest.main()

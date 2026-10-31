@@ -33,7 +33,7 @@ def restore_code(*, slit=False):
     return code[symbols['lh_unhook']:symbols['lh_unhook_end']]
 
 
-def inspect(read, image, *, draw=False, slit=False):
+def inspect(read, image, *, draw=False, slit=False, producer=False):
     if read(MANAGER, 1) != [0xC0726CEC]:
         raise ValueError('power-off manager vtable differs')
     lists = {name: list(read(MANAGER+offset, 10))
@@ -83,6 +83,9 @@ def inspect(read, image, *, draw=False, slit=False):
         expected.append((0xC38D37CC, struct.pack('<I', 0xC2E55A70)))
     if slit:
         expected.append((0xC31D6DD8, bytes(4)))
+    if producer:
+        expected.extend((a,image[a-0xC0000000:a-0xC0000000+4]) for a in
+                        (0xC031EBF8,0xC031EBFC,0xC031EC58,0xC031EC5C))
     for address, data in expected:
         values = [e['words'][(address-e['address'])//4] for e in block['entries']
                   if e['address'] <= address < e['address']+e['bytes']]

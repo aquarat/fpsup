@@ -4,8 +4,10 @@
 connects native menu selection to 4/6/8/12 fps timing on **UHD CinemaDNG, 8-bit,
 nominal 24 fps only**. The later [observation stage](FPL_RESIDENT_OBSERVATION.md)
 adds per-DNG diagnostics and a 90-second take, but an active-take native size
-change hung the camera. Physical recovery and original-card restoration remain
-pending. Do not change native format/size/rate during recording; stop and verify
+change hung the camera. Battery removal and verified original-card/stock-state
+restoration completed on October31, also after the latest
+[producer trial](FPL_PRODUCER_PROVENANCE.md). The defect remains unfixed.
+Do not change native format/size/rate during recording; stop and verify
 idle first. Mode-change cleanup in emulation is not live mode-change acceptance.
 
 ## Build and operation
@@ -87,7 +89,7 @@ Whole sampled DNGs at each rate decoded with LibRaw/rawpy: 8,447,488 bytes,
 had no injected GTAG. No full clip enumeration/frame-count equivalence is claimed.
 Idle FHD→UHD restoration recovered `0/4/3/12`; exposure remained mode3/shutter0/0/ISO0.
 Stock state and the complete original pair were verified after this stage's reboot.
-That historical restoration was superseded by the later failed active-take trial.
+The later failed active-take trial and October31 recovery are separate records.
 
 | Historical recording debug artifact | Bytes | SHA-256 |
 |---|---:|---|

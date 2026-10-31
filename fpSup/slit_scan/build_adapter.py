@@ -27,13 +27,20 @@ def embedded(name, code, pointer=False):
     return f'static __attribute__((naked,noinline)) {signature} {{ __asm__("{prefix}.word {words}"); }}\n'
 
 
-def build(provider=None, *, runtime=False, boot=False, recording=False):
+def build(provider=None, *, runtime=False, boot=False, recording=False, queue_observation=False, lookup_observation=False,
+          producer_observation=False):
     layer_source = SHARED/'ui_strings.S'
     layer = armasm.assemble(layer_source)
     symbols = armasm.symbols(layer_source)
     guard = armasm.assemble(HERE.parent/'fp_usb_shell/asm/fpl_ui_guard.S', ['RUNTIME_ARGS=1'])
     if recording and not (runtime and boot):
         raise ValueError('recording requires the ordinary boot owner')
+    if queue_observation and not recording:
+        raise ValueError('queue observation requires recording')
+    if lookup_observation and not queue_observation:
+        raise ValueError('lookup observation requires queue observation')
+    if producer_observation and not lookup_observation:
+        raise ValueError('producer observation requires lookup observation')
     restore = fpl_ui_restore.restore_code(slit=recording)
     if len(layer) > 0x800:
         raise ValueError('layer exceeds guarded entry reservation')
@@ -47,6 +54,8 @@ def build(provider=None, *, runtime=False, boot=False, recording=False):
             (tree/name).write_text(public.sub(r'static \1', (SHARED/name).read_text()))
         source = '#include <stdint.h>\n#define UIA_FPL_302 1\n'
         if recording: source += '#define FPL_SLIT_RECORDING 1\n'
+        if queue_observation: source += '#define FPL_SLIT_QUEUE 1\n'
+        if producer_observation: source += '#define FPL_SLIT_TRACE 1\n'
         for name, value in dict(FPL_LAYER_BYTES=len(layer), FPL_RESTORE_BYTES=len(restore),
                                 FPL_RESOLVE=symbols['resolve'], FPL_OWNS=symbols['owns'],
                                 FPL_REMAIN=symbols['remain']).items():
@@ -56,7 +65,10 @@ def build(provider=None, *, runtime=False, boot=False, recording=False):
         source += embedded('fpl_guard', guard)
         if recording:
             tag_source = HERE.parent/'fp_usb_shell/asm/fpl_gtagpf.S'
-            tag_defs = ['SLIT=1', 'PARAM=0', 'SRC=0', 'N=64']
+            tag_defs = ['SLIT=1', 'PARAM=0', 'SRC=0', f'N={640 if producer_observation else 464 if lookup_observation else 336 if queue_observation else 64}']
+            if queue_observation: tag_defs += ['SLIT_QUEUE=1']
+            if lookup_observation: tag_defs += ['SLIT_LOOKUP=1']
+            if producer_observation: tag_defs += ['SLIT_PRODUCER=1']
             tag_code = armasm.assemble(tag_source, tag_defs)
             tag_symbols = armasm.symbols(tag_source, tag_defs)
             source += embedded('fpl_tag_image', tag_code, True)

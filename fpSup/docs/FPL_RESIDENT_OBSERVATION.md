@@ -1,10 +1,40 @@
 # fp L resident per-DNG observations — 30 October 2026
 
-**Development source, not release acceptance.** An active-take native size change
-caused a camera hang/shell loss. Physical recovery is required; the original card
-has **not** been restored after that failure, and the test card remains installed.
-Recorder state, final mode and cleanup are unknown. Detailed device recovery logs
-and backup locations remain private. No source-export test establishes recovery.
+**31 October: recovery and original-card restoration verified.** Battery removal
+recovered the earlier camera hang. Both original diagnostic files were restored,
+independently read back in full, then checked again after a separate restart.
+Stock UI/hooks, recorder idle, empty Vd, original UHD/8-bit/24 and exposure passed;
+no resident Slit scan menu/observer remains. The active-take native size-change
+hang remains **unfixed**. Development source, not release acceptance.
+
+Subsequent [v2 queue](FPL_QUEUE_IDENTITY.md), [v3 notification timeline](FPL_LOOKUP_PROVENANCE.md)
+and [v4 producer provenance](FPL_PRODUCER_PROVENANCE.md) trials also restored the
+original pair and verified stock state. V4 joins93 DNGs to software queue
+generations; optical common-clock sensor-phase qualification remains open.
+[Exposure](FPL_EXPOSURE_BOUNDARY.md) is offline-only and deployment-refused.
+
+## 31 October recovery record
+
+An initial power-switch cycle did not recover USB; battery removal allowed fresh
+enumeration. Rediscovered runtime was inactive/Off, recorder idle and originals
+already selected. No recording toggle or mode/exposure change was needed.
+After pair replacement, the separate reboot reply timed out; the existing daemon
+discarded its stale handle and reopened. The first check still found diagnostic
+AutoRun's I-cache routine in echo; borrowing waited until echo was stock.
+
+Verification passed stock pages, six string words, drawing vtable,221 screens,
+2,198 variables, six native Subject observers/three empty slots, empty Vd,
+idle recorder, mode tuple1/0/4/3/12, exposure mode3/shutter0/0/ISO0, stock echo,
+original six-word journal in both shutdown lists and eight empty MEM1 windows.
+Both complete files were downloaded again after reboot:
+
+- BIN4,988 SHA-256: `1639fe95ba115564f0140fd0359fd4432bd9134fc601bcc2392a5b74b7995e36`.
+- AutoRun8,116 SHA-256: `7a82fa534a0f901eada154cded5a3699fb06b6b2237c6b15dcced8f8883473d0`.
+
+The original diagnostic90-second delay is restored. No daemon replacement or
+logical USB reset was needed after battery removal. Raw recovery evidence remains
+external. The failed take's integrity, mode-change defect and broader acceptance
+remain unresolved. The following sections preserve October30 stage evidence.
 
 This extends [resident recording](FPL_RESIDENT_RECORDING.md) with the existing
 GTAG observer/parser in the same retained allocation/shared shutdown body.
@@ -146,8 +176,8 @@ Catalogue reproduction is **blocked** by the unavailable original `logo2.png`,
 after the fingerprinted official fp image satisfied the earlier image dependency.
 Derived logo renders are not substitutes. No catalogue/site/release was changed.
 
-Physical recovery and independent original-pair/stock-state restoration come first.
-Then outstanding acceptance includes no-shell cold boot, physically disconnected
+Recovery and independent original-pair/stock-state restoration passed on October31.
+Outstanding acceptance includes no-shell cold boot, physically disconnected
 USB recording, roughly ten no-record power-switch cycles, previous-card retained
 image and post-record restart, shutdown quiescence, optical calibration at all
 rates, capture-boundary frame identity, exposure rollback before settings persistence,

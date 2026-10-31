@@ -88,7 +88,18 @@ def restore_exposure(io, saved, log):
             set_menu(io, name, saved[name])
         except Exception as error:
             errors.append(f'{name}: {error}')
-    log('exposure_restore', dict(saved=saved, errors=errors))
+    # The native settings are coupled: e.g. mode can change shutter after the
+    # shutter setter already verified. Only the final tuple proves restoration.
+    actual = {}
+    if not errors:
+        for name in EXPOSURE:
+            try:
+                actual[name] = menu(io, name)
+                if actual[name] != saved[name]:
+                    errors.append(f'{name}: final value {actual[name]!r} != {saved[name]!r}')
+            except Exception as error:
+                errors.append(f'{name}: final readback: {error}')
+    log('exposure_restore', dict(saved=saved, actual=actual, errors=errors))
     if errors:
         raise RuntimeError('; '.join(errors))
 

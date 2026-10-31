@@ -181,8 +181,12 @@ def card(image, diag=False, *, trial=True, stock_sections=(), boot_bins=(), shel
     if ui_boot:
         from fpl_ui_restore import stock_sections as ui_sections
         expected = ui_sections(image)
+        producer = [(a,image[a-BASE:a-BASE+4]) for a in
+                    (0xC031EBF8,0xC031EBFC,0xC031EC58,0xC031EC5C)]
+        if slit_recording and list(stock_sections) == expected+producer:
+            expected += producer
         if list(stock_sections) != expected or not boot_bins or trial:
-            raise ValueError('fp L UI boot requires exactly six stock string words and a boot entry')
+            raise ValueError('fp L UI boot requires six stock string words, optional complete producer seams, and a boot entry')
         # This native BSS vtable, verified constructed at ordinary AutoRun time,
         # is restored by the SAME shared journal, not a product shutdown object.
         stock_sections = [*stock_sections, (0xC38D37CC, struct.pack('<I', 0xC2E55A70))]

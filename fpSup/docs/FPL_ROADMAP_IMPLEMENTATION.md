@@ -10,9 +10,13 @@ Latest slice: [ordinary menu boot](FPL_STANDALONE_BOOT.md),
 [per-DNG observations](FPL_RESIDENT_OBSERVATION.md). The debug card measured
 4/6/8/12 fps on UHD/8-bit/24; Off, unsupported-mode refusal, repeated normal stops
 and a 90-second 4 fps take passed live. An active-take native size change then
-hung the camera. Physical recovery and original-card restoration are pending.
-Automatic resident exposure, sensor-frame association and rate/timecode correction
-remain unfinished. Physical-power and general M1/M2 gates remain open.
+hung the camera. Battery removal and verified original-card/stock restoration
+completed on October31. [V4 producer provenance](FPL_PRODUCER_PROVENANCE.md) joins
+93 DNGs to historical lookups/independent software queue generations; its trial
+also restored stock state. Sensor-phase qualification and capture-rate/timecode
+correction remain open. [Resident exposure](FPL_EXPOSURE_BOUNDARY.md) is offline-only;
+`--exposure` refuses. The active-recording size-change hang is unfixed.
+Physical-power and general M1/M2 gates remain open.
 Earlier implementation/restoration status below is historical.
 
 ## Active slices
@@ -144,8 +148,8 @@ not the native defaults `(0,3,1)`; `+0/+4` are 3840x2160 and `+1C` is `0x2530`.
 Under the traced factory predicate, `p[30]==0` selects the 0x8C-leaf
 (`C2E4A5B0`) branch. That offline mapping is being replayed against the exact
 snapshot before it is treated as established. Bulk MEMR at these addresses is
-refused (code 4, outside the worker window); `mem get` succeeded. Evidence is in
-the private live directory `cdng-context/`. The retained task and its pending
+refused (code 4, outside the worker window); `mem get` succeeded. Evidence remains
+external. The retained task and its pending
 marker were not touched.
 
 ### First live CinemaDNG take (23 October, owner-authorized)
@@ -156,7 +160,7 @@ responsive. The card gained `\CINEMA\A001_001\`: 141 DNGs of 8,447,488 bytes
 each, a WAV and `SPP_metadata.xmp`. The files were not downloaded, because the
 transfer tool refuses while the retained-task pending marker exists, and that
 marker is kept. Reads were word reads only, following pointers only into known
-RAM ranges. Evidence: private `cdng-take-1/` (`take.json`, card listing, hashes).
+RAM ranges. Take observations, card listings and hashes remain external.
 
 Idle, before the take: template owner `C358E9D8` all zero, registry
 `C3520D88` all zero. Mid-take, three snapshots about 1.2 s apart, owner stable:
@@ -216,8 +220,8 @@ The owner allowed downloads from now on, so the retained-task pending marker
 was archived and removed (see [tools](FPL_TOOLS.md)); no native storage was
 freed. A full 8.4 MB frame does not fit the 1 MiB staging pool, so
 `fpl_getfile.py` gained an exact `--prefix` mode (11 download tests pass) and
-read the first 0x20000 bytes of frame 1. Evidence: private `cdng-take-1-files/`
-and `cdng-take-1/dng1_ifd_listing.txt`, hashed in `cdng-take-1/SHA256SUMS`.
+read the first 0x20000 bytes of frame 1. Prefixes, IFD listings and hashes remain
+external.
 
 | Item | Value |
 | --- | --- |
@@ -261,8 +265,8 @@ fixtures) and the MAIN/DATA audit (exit 0), and recomputed H(560)=`0x13800`,
 H(561)=`0x13C00`, H(7728)=`0x15400`, H(7729)=`0x15800`. Bound: the replay keeps
 every tag payload and the total extent, but relocates child IFDs relative to
 the capture. A live take with a test tag at N=560/561 must confirm actual
-growth, H/StripOffsets agreement, headroom and runtime ownership. Evidence:
-private `reference-builds/2026-10-23-m3-real-dng/`.
+growth, H/StripOffsets agreement, headroom and runtime ownership. Detailed
+replay evidence remains external.
 
 **Live test-tag route (offline; arming blocked).** A hookless native attach
 exists: Subject `C31AB0D0`, attach `C00CF208`. The observer is called
@@ -278,11 +282,11 @@ rollback or cancellation. Until that exists, arming the observer and MOVON for a
 test-tag take stay blocked. The procedure is drafted in
 [formatter](FPL_GYRO2_FORMATTER.md): reads, echo restore, two takes, prefix
 download and timeout recovery. Main reran 65 tests (no skips) and the audit
-(exit 0). The blocked far-hook files were not read or changed. Evidence: private
-`reference-builds/2026-10-23-m3-test-tag-route/`.
+(exit 0). The blocked far-hook files were not read or changed. Detailed evidence
+remains external.
 
 **Header stability within a take (live).** The first 0x20000 bytes of frames 70
-and 141 were also downloaded (`--prefix`; hashes in `cdng-take-1/SHA256SUMS`).
+and 141 were also downloaded (`--prefix`; hashes retained with external evidence).
 All three frames have identical IFD structure, StripOffsets `0x13800`,
 metadata ending at the same place (last nonzero byte `0x135BC`) and zero padding
 up to H. Only 9 header bytes differ from frame 1, in `0x723..0x71A0`, including
@@ -305,8 +309,7 @@ immediate caller publishes a zero return as H without checking for an error.
 No synchronous take-cancellation path is established. A refusal by the test
 primitive therefore does not show that a live take would stop. Needed next: a
 final-builder insertion point before padding, tied to real destination
-ownership and a caller that honours refusal. Evidence: private
-`reference-builds/2026-10-23-m3-padding-rollback/`.
+ownership and a caller that honours refusal. Detailed evidence remains external.
 
 **Late population and cancellation (offline; arming stays blocked).** The
 selected final population pass (`test_fpl_formatter_late.py`) adds 11 root
@@ -332,8 +335,7 @@ detect it, so recovery without harm cannot be guaranteed. **Decision: no live
 test-tag take.** The bounded investigation stops here, like M1. Moving forward
 needs either a code hook at the builder-size call (it would share the far-hook
 blocker) or more mapping of the observer-to-final interval. Main reran 77 tests
-(no skips) and the audit (exit 0). Evidence: private
-`reference-builds/2026-10-23-m3-late-population/`.
+(no skips) and the audit (exit 0). Detailed evidence remains external.
 
 **Worst case of an overflow (analysis, untested).** The header DMA destination
 is `recording[+4C] - H`, so overflow runs *backwards*, into memory below the
@@ -368,8 +370,8 @@ away, re-enumerated or been claimed elsewhere. Next time, first check `version`
 over the shell and the host shell daemon before anything else. The
 owner then changed plan and stopped the work. **State at stop:** no observer
 attached, no echo borrow, no RAM or card write, no key press, card not
-cleared. The private directory `gtag-test-preflight/` was created but holds
-only its README. No arming code exists for this test.
+cleared. Only a private preflight note was created. No arming code exists for
+this test at that stage.
 
 **N=560 test take done (23 October, owner-authorized, live).** The earlier
 `mcaps` failure was the camera being switched off; after the owner powered it
@@ -395,8 +397,7 @@ and 40 of `\CINEMA\A001_002\` carry exactly one GTAG `0x4653`, type 7, count
 560, at `0x11BBE`, byte-equal to the payload; StripOffsets `0x13800`; metadata
 now fills the padding exactly; strict admission passes. All frames share the
 template, so frame 40's tag bytes equal frame 1's. Echo, Subject and owner were
-back to stock/idle afterwards. Evidence: private `gtag560-take/` (README,
-events, prefixes, SHA256SUMS).
+back to stock/idle afterwards. Notes, events, prefixes and hashes remain external.
 
 What this settles: the mode-0 builder is small (late population adds the rest),
 and on this mode the add is carried through late population into the final
@@ -415,7 +416,7 @@ So the camera grows the header and moves the strip consistently: a tag beyond
 the padding produces a valid, shifted-strip DNG rather than corruption, at
 least for one 0x400 step. Not checked: full file length and trailer, pixels
 beyond the first 0x4000 raw bytes, and live buffer `+128` headroom in this
-take. Camera back to stock afterwards. Evidence: private `gtag561-take/`.
+take. Camera back to stock afterwards. Raw evidence remains external.
 
 **Full-frame check (live reads only).** New `fp_usb_shell/fpl_getrange.py`
 (`asm/fpl_getrange.S`) downloads a file larger than staging by chunks: each call
@@ -427,7 +428,7 @@ tifffile and LibRaw (rawpy) both decode them as 3856x2170 8-bit CFA from offset
 `0x13C00`. The test scenes are dark, so the pixel check uses the dark frame's
 fixed pattern: against the N=560 frame the column profile correlates best at
 shift 0 (0.20, versus 0.02 at a 1024-column shift), row profile 0.87. No strip
-displacement. Hashes: private `gtag561-take/FULL_FRAMES.SHA256`.
+displacement. Full-frame hashes remain with the external evidence.
 
 **Per-frame tag write: done (24 October, live).** The M3 slice that was
 paused that morning (the attempt to write the experiment observer was

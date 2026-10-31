@@ -40,6 +40,9 @@ static uint32_t fpl_sites_stock(void) {
 static uint32_t fpl_journal_for(uint32_t draw) {
     if (FPL_READ(FPL_MANAGER) != 0xC0726CECu) return 0;
     uint32_t found = 0, coverage = 0, drew = 0;
+#ifdef FPL_SLIT_TRACE
+    uint32_t traced = 0;
+#endif
 #ifdef FPL_SLIT_RECORDING
     uint32_t vd = 0;
 #endif
@@ -82,6 +85,16 @@ static uint32_t fpl_journal_for(uint32_t draw) {
                     coverage |= 1u << k;
                 }
             }
+#ifdef FPL_SLIT_TRACE
+            for (uint32_t k=0;k<4;++k) {
+                uint32_t at=k<2 ? 0xC031EBF8u+4*k : 0xC031EC58u+4*(k-2);
+                uint32_t stock=k&1 ? 0xE1A0C000u : k==0 ? 0xE92D0030u : 0xE92D0070u;
+                if (at>=a && at-a<n) {
+                    if ((traced&(1u<<k)) || FPL_READ(p+8+at-a)!=stock) return 0;
+                    traced|=1u<<k;
+                }
+            }
+#endif
             p += 8+n;
         }
         if (!terminated) return 0;
@@ -89,6 +102,9 @@ static uint32_t fpl_journal_for(uint32_t draw) {
     return found == 1 && coverage == 63 && (!draw || drew == 1)
 #ifdef FPL_SLIT_RECORDING
            && vd == 1
+#endif
+#ifdef FPL_SLIT_TRACE
+           && traced == 15
 #endif
            ;
 }

@@ -13,6 +13,15 @@
 .syntax unified
 .arm
 .text
+#ifdef PRODUCER_TRACE
+#define SITE_COUNT 2
+#define JUMP_WORD 0xE51FF004
+#define ENTRY_LIMIT 0x4000
+#else
+#define SITE_COUNT 3
+#define JUMP_WORD 0xF000F8DF
+#define ENTRY_LIMIT 0x2000
+#endif
 #if !defined(RUNTIME_ARGS) && (!defined(P) || !defined(B))
 #error P and B must name reserved storage
 #endif
@@ -139,6 +148,14 @@ frame:
     tst r8, #3
     bne bad_task
 thumb_pc:
+#ifdef PRODUCER_TRACE
+    @ Entry-only exclusion is insufficient for producer state initialization.
+    @ Reject the WHOLE writer and lookup, including both native continuations.
+    ldr r0, =0xC031EBF8
+    sub r0, r8, r0
+    cmp r0, #0xD0
+    blo busy_pc
+#else
     @ Conservatively refuse PC == site as well as every displaced halfword.
     adr r0, sites
     mov r1, #3
@@ -149,6 +166,7 @@ pc_loop:
     blo busy_pc
     subs r1, r1, #1
     bne pc_loop
+#endif
     ldr r0, [r4, #40]
     add r0, r0, #1
     str r0, [r4, #40]
@@ -172,10 +190,15 @@ next:
     cmp r0, #1
     bne bad_context
     ldr r5, [r4]
+#ifdef PRODUCER_TRACE
+    cmp r5, #1
+    bne bad_request                @ installation only; shared journal owns removal
+#else
     cmp r5, #0
     beq success
     cmp r5, #3
     bhi bad_request
+#endif
     ldr r6, [r4, #76]              @ checked retained 64-KiB USER owner
     ldr r0, =0xFFFF
     tst r6, r0
@@ -188,7 +211,7 @@ next:
     bhi bad_request
     add r7, r4, #64
     adr r8, sites
-    mov r9, #3
+    mov r9, #SITE_COUNT
 verify:
     ldr r3, [r7], #4
     tst r3, #3
@@ -196,11 +219,11 @@ verify:
     sub r0, r3, r6
     cmp r0, #0x1000
     blo bad_request
-    cmp r0, #0x2000
+    cmp r0, #ENTRY_LIMIT
     bhs bad_request
     ldm r8!, {r0-r2}
     cmp r5, #2
-    ldreq r1, =0xF000F8DF
+    ldreq r1, =JUMP_WORD
     moveq r2, r3
     ldr ip, [r0]
     cmp ip, r1
@@ -213,12 +236,12 @@ verify:
     @ No scheduling/native calls between verification and six stores.
     add r7, r4, #64
     adr r8, sites
-    mov r9, #3
+    mov r9, #SITE_COUNT
 write_sites:
     ldr r3, [r7], #4
     ldm r8!, {r0-r2}
     cmp r5, #2
-    ldrne r1, =0xF000F8DF
+    ldrne r1, =JUMP_WORD
     movne r2, r3
     str r2, [r0, #4]
     str r1, [r0]
@@ -237,7 +260,7 @@ roundtrip_restore:
     mov r5, #2
     add r7, r4, #64
     adr r8, sites
-    mov r9, #3
+    mov r9, #SITE_COUNT
     b write_sites                  @ restore before any scheduler can run
 success:
     mov r0, #2
@@ -270,6 +293,11 @@ done:
     .ltorg
     .balign 4
 sites:
+#ifdef PRODUCER_TRACE
+    .word 0xC031EBF8, 0xE92D0030, 0xE1A0C000
+    .word 0xC031EC58, 0xE92D0070, 0xE1A0C000
+#else
     .word 0xC05E1D38, 0x3FFFF1B1, 0x6902BF1C
     .word 0xC05E23A8, 0x428A6942, 0x6900D805
     .word 0xC05E23C0, 0x69406902, 0x1A501812
+#endif

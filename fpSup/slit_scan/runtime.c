@@ -34,6 +34,14 @@ void slit_vd(struct slit_runtime *s) {
         r->chosen = 0;
     } else {
         uint32_t tick = FPL_READ(0x2D810054u);
+#ifdef FPL_SLIT_QUEUE
+        /* A different native IRQ advances this counter. Record its raw value;
+         * neither +1 nor a fixed DNG offset is a capture association. */
+        uint32_t *q = r->queue[r->queue_count & 15];
+        q[0] = FPL_READ(0xC343B858u) == 1 ? FPL_READ(0xC343B6D4u) : 0xffffffffu;
+        q[1] = FPL_READ(0x30100004u); q[2] = tick; q[3] = r->count+1;
+        slit_barrier(); ++r->queue_count;
+#endif
         if (r->active && r->count > 9) {
             uint32_t delta = tick >= r->last_tick ? tick-r->last_tick : tick+12000000-r->last_tick;
             r->samples[r->intervals++ & 31] = delta;
@@ -75,6 +83,11 @@ static void slit_record_tick(struct slit_runtime *s) {
     else if (rec == 1 && r->idle_seen && !r->take_seen) {
         r->take_seen = 1; r->start_second = now; r->chosen = selected;
         r->count = 0; r->intervals = 0;
+#ifdef FPL_SLIT_QUEUE
+        r->queue_count = 0;
+        for (uint32_t i=0; i<16; ++i)
+            for (uint32_t j=0; j<4; ++j) r->queue[i][j] = 0;
+#endif
         /* A disabled/unsupported start consumes this take; never activate
          * halfway through it when the user later changes a menu setting. */
         if (!usable || !selected || !r->mode_ok || FPL_READ(0xC3033A40u) != 2) r->chosen = 0;

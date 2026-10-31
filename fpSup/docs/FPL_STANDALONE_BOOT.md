@@ -4,9 +4,10 @@
 software boots installed the native menu without a post-boot RAM installer.
 The later [recording](FPL_RESIDENT_RECORDING.md) and
 [frame-observation](FPL_RESIDENT_OBSERVATION.md) stages extend this same owner.
-The latest active-take mode-change trial hung the camera; physical recovery and
-original-card restoration remain pending. Earlier successful restorations are
-historical, not the current state.
+An active-take mode-change trial later hung the camera. Battery removal and
+verified original-card/stock restoration followed on October31. The latest
+[v4 producer trial](FPL_PRODUCER_PROVENANCE.md) also restored both originals and
+verified stock state. The mode-change defect remains unfixed.
 
 ## Build
 
@@ -92,7 +93,7 @@ Right/Right/OK/OK/Right/Left displayed 4/6/8/12/Off/12; MENU exit/reentry retain
 selection and the original audio row remained On. The second boot reset to Off.
 Immutable owned extents were read back and compared. Recorder/exposure remained
 unchanged. The original card and stock state were restored after this stage;
-the later observation-stage failure supersedes that restored-state result.
+the later observation-stage failure and October31 recovery are separate records.
 
 | Historical debug artifact | Bytes | SHA-256 |
 |---|---:|---|

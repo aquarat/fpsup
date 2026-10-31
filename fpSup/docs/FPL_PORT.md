@@ -4,12 +4,14 @@ This is an experimental shared-code port, not a released fp L product card.
 The downloadable fp products still target firmware 5.02. Firmware images and
 raw camera observations are not included.
 
-## Latest development: resident slit-scan and per-DNG diagnostics
+## Latest development: native queue provenance and notification timelines
 
-**Known live failure:** an active-take native size change hung the camera and
-blocked the shell. Physical recovery and original-card restoration are pending;
-the test card remains installed. Do not change native format/size/rate during
-recording. [Current evidence and limitations](FPL_RESIDENT_OBSERVATION.md).
+**31 October recovery verified:** battery removal recovered the earlier hang;
+the original diagnostic pair and stock state were independently verified after
+restoration, including after the latest producer trial. No resident Slit scan
+menu/observer remains. The active-take native size-change hang is **unfixed**;
+do not change native format/size/rate during recording.
+[Recovery](FPL_RESIDENT_OBSERVATION.md) · [Latest evidence](FPL_PRODUCER_PROVENANCE.md).
 
 - **USB-host slit-scan capture is live-tested:** 4/6/8/12 fps, short-exposure
   compensation, fixed ISO, single UHD RAW-frame and DNG-sequence export,
@@ -22,12 +24,22 @@ recording. [Current evidence and limitations](FPL_RESIDENT_OBSERVATION.md).
   CinemaDNG 8-bit nominal24. Off, unsupported-mode refusal, repeated takes and
   normal-stop restoration passed. [Boot](FPL_STANDALONE_BOOT.md) and
   [recording](FPL_RESIDENT_RECORDING.md).
-- **Per-DNG FPLS diagnostics are live-tested:** repeated 4 fps takes including
-  90 seconds and whole sampled DNG decoding passed. Observations identify DNG
-  notifications, not sensor frames. Frame-exact association, rate/timecode
-  correction and resident automatic exposure compensation remain unfinished.
+- **Opt-in FPLS v2/v3/v4 diagnostics are live-tested:** v2 measures native queue
+  labels; v3 adds exact consumer keys/coherent notification clocks; v4 joins all
+  93 DNGs from finite 4/12fps trials to actual historical lookups and independent
+  producer generations. Six whole DNGs decoded. These are software publication
+  bounds, not sensor exposure/readout timestamps. The read-only host timeline
+  preserves gaps, transitions, nominal metadata and unknown capture time.
+  [Queue](FPL_QUEUE_IDENTITY.md) · [Timeline](FPL_LOOKUP_PROVENANCE.md) ·
+  [Producer provenance](FPL_PRODUCER_PROVENANCE.md).
+  Optical common-clock sensor-phase qualification and capture-metadata correction
+  remain open. **Resident exposure is offline-only:** the controller is absent
+  from card runtime and `--exposure` refuses deployment. Native request deferral
+  and settings serialization remain unqualified.
+  [Exposure boundary](FPL_EXPOSURE_BOUNDARY.md).
   No-shell hardware, disconnected USB, physical power cycles, shutdown quiescence
-  and broader stress acceptance remain open. This is not a release.
+  and broader stress acceptance remain open. Catalogue reproduction still lacks
+  the original `logo2.png`. This is not a release.
 - **Auto ETTR/deflicker is offline groundwork:** RAW metering, bounded exposure
   planning, DNG analysis and JSON/XMP sidecars. Native RAW ownership, calibration,
   settling, controls and still/interval capture integration remain unfinished.

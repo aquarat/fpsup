@@ -52,6 +52,14 @@ uint32_t slit_boot(uint32_t owner, uint32_t tick, uint32_t key, uint32_t bytes) 
     FPL_WRITE(owner+0x408, FPL_READ(SLIT_DRAW+8));
     FPL_WRITE(owner+0x40c, tick); FPL_WRITE(owner+0x410, (uint32_t)s);
     FPL_WRITE(owner+0x414, SLIT_TCB);
+#ifdef FPL_SLIT_TRACE
+    uint32_t trace=FPL_READ(owner+0x24);
+    if ((trace&0xffff) || !fpl_heap(trace,0x10000) || trace==owner) return 0x304;
+    uint32_t guard=FPL_READ(trace+16);
+    if (guard<trace+0x1000 || guard>=trace+0x4000 || (guard&3) ||
+        FPL_READ(trace+0x8000)!=0x31545046u || !fpl_journal_for(1)) return 0x304;
+    if (((uint32_t (*)(uint32_t,uint32_t))guard)(trace+0x400,trace+0x4000)!=2) return 0x305;
+#endif
     ((void (*)(void))0xC000E91Cu)();
     ((void (*)(void))0xC000EABCu)();
     /* The shared drawing wrapper rechecks identity with IRQ/FIQ excluded and

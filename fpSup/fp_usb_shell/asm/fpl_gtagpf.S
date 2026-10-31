@@ -85,7 +85,16 @@
 #ifndef N
 #error N required
 #endif
-#if defined(SLIT) && (N != 64 || defined(GYRO))
+#if defined(SLIT_PRODUCER) && (!defined(SLIT_LOOKUP) || N != 640)
+#error "SLIT_PRODUCER requires the 640-byte FPLS v4 observation"
+#endif
+#if defined(SLIT_LOOKUP) && (!defined(SLIT_QUEUE) || (!defined(SLIT_PRODUCER) && N != 464))
+#error "SLIT_LOOKUP requires SLIT_QUEUE and the 464-byte FPLS v3 observation"
+#endif
+#if defined(SLIT_QUEUE) && (!defined(SLIT) || (!defined(SLIT_LOOKUP) && N != 336))
+#error "SLIT_QUEUE requires SLIT and the 336-byte FPLS v2 measurement"
+#endif
+#if defined(SLIT) && ((!defined(SLIT_QUEUE) && N != 64) || defined(GYRO))
 #error "SLIT is the distinct 64-byte FPLS observation format"
 #endif
 .equ OBJ,         PARAM + 0x100
@@ -577,6 +586,11 @@ ret0:
     bx lr
 
 #ifdef SLIT
+#ifdef SLIT_QUEUE
+#define SLIT_MMIO ip
+#else
+#define SLIT_MMIO r9
+#endif
 /* FPLS v1: a per-DNG NOTIFY observation, NOT sensor-frame timing association.
  * Fields after the identity header: requested, active, Vd count, trial,
  * timing04, timing20, seconds, timer5, last Vd timer5, reason,
@@ -587,7 +601,13 @@ ret0:
  */
 slit_frame:
     push {r4-r10, lr}
-    sub sp, sp, #64
+    sub sp, sp, #N
+#ifdef SLIT_QUEUE
+    /* r5 is the actual DataPool supplied by native notification. Its +4004
+     * sequence was written by C038C8EC after the buffer-key lookup. That lookup
+     * can fall back to the current counter: this remains observation, not proof. */
+    mov r9, r5
+#endif
     mrs r10, cpsr
     cpsid if
     ldr r5, [r4, #0x120]
@@ -598,7 +618,7 @@ slit_frame:
     str r0, [sp, #4]
     mvn r0, r0
     str r0, [sp, #8]
-    mov r0, #64
+    mov r0, #N
     str r0, [sp, #12]
     ldr r0, [r5, #0x4C]
     str r0, [sp, #16]
@@ -608,16 +628,16 @@ slit_frame:
     str r0, [sp, #24]
     ldr r0, [r7, #16]
     str r0, [sp, #28]
-    addr r9, 0x30100000
-    ldr r0, [r9, #4]
+    addr SLIT_MMIO, 0x30100000
+    ldr r0, [SLIT_MMIO, #4]
     str r0, [sp, #32]
-    ldr r0, [r9, #0x20]
+    ldr r0, [SLIT_MMIO, #0x20]
     str r0, [sp, #36]
-    addr r9, 0xC3076D98
-    ldr r0, [r9]
+    addr SLIT_MMIO, 0xC3076D98
+    ldr r0, [SLIT_MMIO]
     str r0, [sp, #40]
-    addr r9, 0x2D810054
-    ldr r0, [r9]
+    addr SLIT_MMIO, 0x2D810054
+    ldr r0, [SLIT_MMIO]
     str r0, [sp, #44]
     ldr r0, [r7, #60]
     str r0, [sp, #48]
@@ -625,24 +645,231 @@ slit_frame:
     str r0, [sp, #52]
     mov r0, #0
     str r0, [sp, #56]
+#ifdef SLIT_QUEUE
+#ifdef SLIT_LOOKUP
+#ifdef SLIT_PRODUCER
+    mov r0, #4
+#else
+    mov r0, #3
+#endif
+#else
+    mov r0, #2
+#endif
+#else
     mov r0, #1
+#endif
     str r0, [sp, #60]
+#ifdef SLIT_QUEUE
+    mov r0, #0
+    str r0, [sp, #64]           @ native sequence; valid only with flags=1
+    str r0, [sp, #72]           @ current counter, not capture identity
+    str r0, [sp, #76]
+    addr ip, 0xC343B858         @ native counter-owner construction guard
+    ldr r0, [ip]
+    cmp r0, #1
+    bne 3f
+    ldr r0, [r9]
+    addr ip, 0xC07333D4         @ exact native DataPool vtable
+    cmp r0, ip
+    bne 3f
+    movw ip, #0x4004
+    ldr r0, [r9, ip]
+    str r0, [sp, #64]
+    addr ip, 0xC343B6D4
+    ldr r0, [ip]
+    str r0, [sp, #72]
+    mov r0, #1
+    str r0, [sp, #76]
+3:  ldr r0, [r7, #236]
+    str r0, [sp, #68]
+    add r9, r7, #240
+    add ip, sp, #80
+    mov r1, #0
+4:  ldr r0, [r9, r1]
+    str r0, [ip, r1]
+    add r1, r1, #4
+    cmp r1, #256
+    blo 4b
+#ifdef SLIT_LOOKUP
+    /* Same observer, no new hook. The exact native call chain preserves the
+     * frame record in saved r5. Reject any other caller or stack extent.
+     * This is the queue at NOTIFY, not a claim about the earlier lookup. */
+    mov r0, #0
+    mov r1, #336
+5:  str r0, [sp, r1]
+    add r1, r1, #4
+    cmp r1, #N
+    blo 5b
+    and r0, r10, #31
+    cmp r0, #0x13
+    bne lookup_clock
+    add r9, sp, #N
+    ldr r0, [r9, #60]           @ observer's incoming LR
+    addr ip, 0xC0053660
+    cmp r0, ip
+    bne lookup_clock
+    add r9, r9, #64            @ observer's incoming SP
+    addr ip, 0xC3000098
+    ldr ip, [ip]
+    ldr r0, =0xC30008BC        @ current native TCB, 1..500
+    cmp ip, r0
+    blo lookup_clock
+    ldr r0, =0xC3000838+501*132 @ exclusive TCB end
+    cmp ip, r0
+    bhs lookup_clock
+    tst ip, #3
+    bne lookup_clock
+    ldr r0, [ip, #0x74]        @ stack top
+    ldr r1, [ip, #0x18]        @ stack bytes
+    cmp r1, #64
+    blo lookup_clock
+    cmp r1, #0x1000000
+    bhi lookup_clock
+    subs r2, r0, r1
+    blo lookup_clock
+    cmp r9, r2
+    blo lookup_clock
+    sub r0, r0, #64
+    cmp r9, r0
+    bhi lookup_clock
+    ldr r0, [r9, #20]          @ C0053618 saved LR
+    addr ip, 0xC00530C8
+    cmp r0, ip
+    bne lookup_clock
+    ldr r0, [r9, #60]          @ C0053028 saved LR
+    addr ip, 0xC038C91C
+    cmp r0, ip
+    bne lookup_clock
+    ldr r0, [r9, #36]          @ consumer's r4: this DataPool
+    /* DataPool was moved out of r9 for the Vd copy; observer keeps it in r5
+     * only until slit_frame. Its value is on our saved-register stack. */
+    ldr r1, [sp, #N+4]
+    cmp r0, r1
+    bne lookup_clock
+    ldr r2, [r9, #40]          @ consumer's r5: frame record
+    tst r2, #3
+    bne lookup_clock
+    ldr r0, =0xC3000000
+    cmp r2, r0
+    blo lookup_user_record
+    ldr r0, =0xCFFFFFB0
+    cmp r2, r0
+    bhi lookup_clock
+    b lookup_record
+lookup_user_record:
+    ldr r0, =0x44400000
+    cmp r2, r0
+    blo lookup_clock
+    ldr r0, =0x464000B0
+    cmp r2, r0
+    bhi lookup_clock
+lookup_record:
+#ifdef SLIT_PRODUCER
+    str r2, [sp, #448]         @ independently checked record / consumer stack
+    add r0, r9, #64
+    str r0, [sp, #452]
+#endif
+    ldr r0, [r2, #0x4c]
+    str r0, [sp, #340]         @ exact key; no address normalization
+    mov r0, #1
+    str r0, [sp, #336]         @ stack provenance valid, queue may be absent
+    ldr r0, [sp, #76]
+    cmp r0, #1
+    bne lookup_clock
+    addr r9, 0xC343B6C4
+    ldr r0, [r9, #0x18c]
+    cmp r0, #10
+    bhs lookup_clock
+    str r0, [sp, #344]
+    add ip, sp, #352
+    mov r1, #0
+lookup_ring:
+    add r2, r9, #0x13c
+    ldr r0, [r2, r1]
+    str r0, [ip, r1]
+    add r2, r9, #0x164
+    ldr r0, [r2, r1]
+    add r2, ip, #40
+    str r0, [r2, r1]
+    add r1, r1, #4
+    cmp r1, #40
+    blo lookup_ring
+    mov r0, #3
+    str r0, [sp, #336]         @ key + native ring snapshot valid
+lookup_clock:
+    /* Bounded counterpart of C0029120: two timer reads with pending status
+     * between them. A rollover between reads refuses, rather than retrying.
+     * Native pending bit 5 accounts for the not-yet-serviced second. */
+    addr ip, 0xC30337EC
+    ldr r0, [ip]
+    addr r1, 0x2D810000
+    cmp r0, r1
+    bne lookup_done
+    ldr r0, [ip, #12]
+    add r2, r1, #0x80
+    cmp r0, r2
+    bne lookup_done
+    addr ip, 0xC2F09408
+    ldr r0, [ip]
+    ldr r2, =12000000
+    cmp r0, r2
+    bne lookup_done
+    ldr r3, [r1, #0x54]
+    addr ip, 0xC3076D98
+    ldr r0, [ip]
+    ldr ip, [r1, #0x84]
+    and ip, ip, #32
+    str ip, [sp, #444]
+    ldr r1, [r1, #0x54]
+    cmp r3, r2
+    bhs lookup_done
+    cmp r1, r2
+    bhs lookup_done
+    cmp r1, r3
+    blo lookup_done
+    cmp ip, #0
+    addne r0, r0, #1
+    str r0, [sp, #436]
+    str r1, [sp, #440]
+    mov r0, #1
+    str r0, [sp, #432]
+lookup_done:
+#ifdef SLIT_PRODUCER
+    ldr r3, [sp, #448]
+    cmp r3, #0
+    beq producer_done
+    ldr r0, [r4, #0x120]
+    sub r0, r0, #0x8000
+    ldr ip, [r0, #0x28]
+    ldr r0, [r0, #0x24]
+    add r0, r0, #0x8000
+    add r1, sp, #464
+    ldr r2, [sp, #N+4]        @ actual observer DataPool
+    ldr r9, [sp, #452]
+    sub sp, sp, #8
+    str r9, [sp]
+    blx ip
+    add sp, sp, #8
+producer_done:
+#endif
+#endif
+#endif
     msr cpsr_c, r10
     add r5, r6, r8
     mov r1, #0
 1:  ldrb r0, [sp, r1]
     strb r0, [r5, r1]
     add r1, r1, #1
-    cmp r1, #64
+    cmp r1, #N
     blo 1b
     bic r0, r5, #31
-    add r1, r5, #64
+    add r1, r5, #N
 2:  mcr p15, 0, r0, c7, c10, 1
     add r0, r0, #32
     cmp r0, r1
     blo 2b
     dsb sy
-    add sp, sp, #64
+    add sp, sp, #N
     pop {r4-r10, pc}
 #endif
 

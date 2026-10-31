@@ -11,13 +11,18 @@ Live evidence and build hashes: [investigation log](FPL_PORT.md).
 
 Latest ordinary-card work: [native menu boot](FPL_STANDALONE_BOOT.md),
 [resident recording](FPL_RESIDENT_RECORDING.md), and
-[per-DNG observations/current failure](FPL_RESIDENT_OBSERVATION.md).
+[per-DNG observations/recovery](FPL_RESIDENT_OBSERVATION.md).
 The explicit `--fpl-ui-boot` profile and opt-in `slit_scan/build_card.py --recording`
 connect native selection to UHD/8-bit/24 timing in the same owner/shared restore
 object. Historical headless-only restrictions below do not describe that profile.
 Resident automatic exposure and corrected DNG metadata remain unfinished.
-The active-take size-change trial hung the camera; physical recovery and original
-card restoration are pending. USB lifecycle limitations remain applicable.
+The active-take size-change hang remains unfixed; battery removal and verified
+original-card/stock restoration completed on October31, including after the
+latest [v4 producer trial](FPL_PRODUCER_PROVENANCE.md). USB lifecycle limits remain.
+Opt-in v2/v3/v4 add queue/key/producer diagnostics. `metadata.py --timeline`
+emits [notification timing](FPL_LOOKUP_PROVENANCE.md), preserving nominal metadata
+and unknown capture time; it never rewrites DNGs. [Resident exposure](FPL_EXPOSURE_BOUNDARY.md)
+is offline-only and `build_card.py --exposure` refuses before reading inputs.
 
 ## Connection
 

@@ -14,8 +14,16 @@ struct slit_recording {
     uint32_t samples[32];
     uint32_t mode[4], summary, refused[4];
     uint32_t observer;
+#ifdef FPL_SLIT_QUEUE
+    uint32_t queue_count;
+    uint32_t queue[16][4]; /* native counter, timing04 BEFORE write, timer5, owned Vd ordinal */
+#endif
 };
 _Static_assert(__builtin_offsetof(struct slit_recording, observer) == 232, "observer shutdown ABI");
+#ifdef FPL_SLIT_QUEUE
+_Static_assert(__builtin_offsetof(struct slit_recording, queue_count) == 236, "FPLS v2 cursor ABI");
+_Static_assert(__builtin_offsetof(struct slit_recording, queue) == 240, "FPLS v2 ring ABI");
+#endif
 /* Shared restore uses only the first six words at owner+0x8200. */
 static uint32_t slit_mask(void) {
     uint32_t mask;

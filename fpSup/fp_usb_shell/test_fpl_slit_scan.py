@@ -44,6 +44,21 @@ class SlitScan(unittest.TestCase):
         self.assertEqual(result[48:56], b'\x03\x01\x01\x00'+bytes(4))
         self.assertEqual(result[56:],data[56:])
 
+    def test_coupled_final_mode_change_cannot_falsely_verify_restoration(self):
+        saved=dict(SetExpMode='3',SetShutterSpeed='0/0',SetIso='0')
+        for coupled in (False,True):
+            state={};events=[]
+            def setter(io,name,value):
+                state[name]=value
+                if coupled and name=='SetExpMode':state['SetShutterSpeed']='1/25'
+            with patch.object(S,'set_menu',setter),patch.object(S,'menu',lambda io,k:state[k]):
+                if coupled:
+                    with self.assertRaisesRegex(RuntimeError,'final value'):
+                        S.restore_exposure(None,saved,lambda *e:events.append(e))
+                else:S.restore_exposure(None,saved,lambda *e:events.append(e))
+            self.assertEqual(events[0][1]['actual'],state)
+            self.assertEqual(bool(events[0][1]['errors']),coupled)
+
     def test_teardown_marker_retained_until_exposure_restored(self):
         with tempfile.TemporaryDirectory() as directory:
             marker = Path(directory)/'pending'
